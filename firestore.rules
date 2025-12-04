@@ -1,0 +1,150 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -------------------------------------------------------------------------
+    // ПОМОЩНИКИ
+    // -------------------------------------------------------------------------
+
+    // Получает документ профиля текущего пользователя
+    function getProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Проверяет, является ли пользователь Клиентом
+    function isClient() {
+      return request.auth != null && getProfile() != null && getProfile().role == 'client';
+    }
+
+    // Проверяет, является ли пользователь Мастером
+    function isMaster() {
+      return request.auth != null && getProfile() != null && getProfile().role == 'master';
+    }
+
+    // Проверяет, является ли пользователь Администратором
+    function isAdmin() {
+      return request.auth != null && getProfile() != null && getProfile().role == 'admin';
+    }
+
+    // Проверяет, является ли пользователь владельцем документа
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // -------------------------------------------------------------------------
+    // КОЛЛЕКЦИЯ USERS (ПРОФИЛИ)
+    // -------------------------------------------------------------------------
+    match /users/{userId} {
+
+      // Чтение:
+      allow read: if (
+        isOwner(userId) ||
+        isAdmin() ||
+        // Клиент может читать только верифицированные профили мастеров.
+        (isClient() && resource.data.role == 'master' && resource.data.verificationStatus == 'verified')
+      );
+
+      // Создание (Регистрация):
+      allow create: if (
+        isOwner(userId) &&
+        // Проверяем, что пользователь не существует (чтобы избежать дублирования)
+        (!exists(/databases/$(database)/documents/users/$(userId)))
+      );
+
+      // Обновление: (Остается строгим, так как нельзя менять системные поля вручную)
+      allow update: if (
+        isOwner(userId) &&
+        // Запрет на изменение критических полей (роль, UID)
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'uid'])) &&
+        // Запрет на изменение системных полей, которые должны обновляться Администратором или Cloud Functions
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['rating', 'callsCount', 'viewsCount', 'verificationStatus']))
+      );
+
+      // Удаление: Только Администратор.
+      allow delete: if (isAdmin());
+    }
+
+    // -------------------------------------------------------------------------
+    // КОЛЛЕКЦИЯ ORDERS (ЗАКАЗЫ)
+    // -------------------------------------------------------------------------
+    match /orders/{orderId} {
+      function canAccessOrder() {
+        return isAdmin() ||
+        isOwner(resource.data.customerId) || (isMaster() && resource.data.masterId == request.auth.uid);
+      }
+
+      // Чтение: Только участники заказа (Клиент, Мастер) и Администратор.
+      allow read: if (canAccessOrder());
+
+      // Создание: Только Клиент.
+      allow create: if (isClient());
+
+      // Обновление: Только участники заказа (Клиент и Мастер) и Администратор могут обновлять СВОИ поля статуса.
+      allow update: if (canAccessOrder());
+
+      // Удаление: Только Администратор.
+      allow delete: if (isAdmin());
+    }
+
+    // -------------------------------------------------------------------------
+    // КОЛЛЕКЦИЯ REVIEWS (ОТЗЫВЫ)
+    // -------------------------------------------------------------------------
+    match /reviews/{reviewId} {
+      // Чтение: Любой аутентифицированный пользователь может читать отзывы.
+      allow read: if (request.auth != null);
+
+      // Создание: Только Клиент.
+      allow create: if (isClient());
+
+      // Обновление/Удаление: Только Администратор.
+      allow update, delete: if (isAdmin());
+    }
+
+    // -------------------------------------------------------------------------
+    // КОЛЛЕКЦИЯ MESSAGES (ЧАТ ВНУТРИ ЗАКАЗА)
+    // -------------------------------------------------------------------------
+    match /orders/{orderId}/messages/{messageId} {
+      // Проверяем, что пользователь участвует в заказе
+      function canAccessChat() {
+        let order = get(/databases/$(database)/documents/orders/$(orderId)).data;
+        return isAdmin() || isOwner(order.customerId) || (isMaster() && order.masterId == request.auth.uid);
+      }
+
+      // Чтение: Доступ только у Клиента и Мастера, участвующих в заказе, и Админа.
+      allow read: if (canAccessChat());
+
+      // Создание: Доступ только у Клиента и Мастера, участвующих в заказе.
+      allow create: if (canAccessChat());
+
+      // Обновление/Удаление: Запрещено.
+      allow update, delete: if (false);
+    }
+
+    // -------------------------------------------------------------------------
+    // КОЛЛЕКЦИЯ master_filters (ДЛЯ AND-ПОИСКА 3NF)
+    // -------------------------------------------------------------------------
+
+    // Разрешает чтение из промежуточной коллекции только аутентифицированным пользователям
+    match /master_filters/{docId} {
+      allow read: if (request.auth != null);
+      // Запись разрешаем только Админу или Мастеру
+      allow write: if (isAdmin() || isMaster());
+    }
+
+    // -------------------------------------------------------------------------
+    // ПРАВИЛА ДЛЯ COLLECTION GROUP (AND-ФИЛЬТРАЦИЯ)
+    // -------------------------------------------------------------------------
+
+    // Разрешает чтение индекса категорий только аутентифицированным пользователям
+    match /{path=**}/categories_index/{filterId} {
+      allow read: if request.auth != null;
+    }
+
+    // Разрешает чтение индекса районов только аутентифицированным пользователям
+    match /{path=**}/districts_index/{filterId} {
+      allow read: if request.auth != null;
+    }
+
+  } // <-- ЗАКРЫВАЕТСЯ БЛОК databases
+}

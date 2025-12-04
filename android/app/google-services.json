@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "57376175407",
+    "project_id": "bolt-usta-app",
+    "storage_bucket": "bolt-usta-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:57376175407:android:bf98f2d6f7aee4dde8ddda",
+        "android_client_info": {
+          "package_name": "com.example.bolt_usta"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAmpzl217mfKg-wzaAVQS7p4jbZ5s0yxek"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:57376175407:android:37502d21339fe7d5e8ddda",
+        "android_client_info": {
+          "package_name": "com.example.bolt_usta_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAmpzl217mfKg-wzaAVQS7p4jbZ5s0yxek"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
