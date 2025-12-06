@@ -140,7 +140,8 @@ class _MasterActiveOrderScreenState extends State<MasterActiveOrderScreen> {
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _buildDetailRow('Klient', client.fullName ?? 'Naməlum Klient'),
+                            // Используем getter fullName, который склеивает name + surname
+                            _buildDetailRow('Klient', client.fullName),
                             _buildDetailRow('Telefon', client.phoneNumber),
                             const SizedBox(height: 10),
                             // Кнопки Связи
@@ -236,12 +237,15 @@ extension AuthServiceProfileFetch on AuthService {
   Future<UserProfile?> getCurrentProfileById(String userId) async {
     // Имитация получения данных клиента
     await Future.delayed(const Duration(milliseconds: 200));
+
+    // ✅ ИСПРАВЛЕНО: Передаем name и surname отдельно, и используем правильную константу роли
     return UserProfile(
       uid: userId,
       phoneNumber: '99470xxxxxx',
       createdAt: DateTime.now(),
-      fullName: 'Fərid Həsənov',
-      role: AppConstants.roleCustomer,
+      name: 'Fərid',          // Имя отдельно
+      surname: 'Həsənov',     // Фамилия отдельно
+      role: AppConstants.dbRoleCustomer, // Правильная константа (dbRoleCustomer)
     );
   }
 }

@@ -1,9 +1,7 @@
 import * as admin from "firebase-admin";
-
 import {onDocumentCreated, onDocumentUpdated, Change, FirestoreEvent, QueryDocumentSnapshot} from "firebase-functions/v2/firestore";
 import {setGlobalOptions} from "firebase-functions/v2";
 import {onCall, HttpsError} from "firebase-functions/v2/https";
-
 import {getDistance} from "geolib";
 import {geohashForLocation, geohashQueryBounds} from "geofire-common";
 
@@ -13,11 +11,11 @@ setGlobalOptions({region: "europe-west3", maxInstances: 10});
 admin.initializeApp();
 const db = admin.firestore();
 const USERS_COLLECTION = "users";
-const RADIUS_KM = 5;
+const RADIUS_KM = 10; // Увеличил до 10км для надежности
 const RADIUS_M = RADIUS_KM * 1000;
 const PENDING_STATUS = "pending";
 const MASTER_ROLE = "master";
-const VERIFIED_STATUS = "verified";
+//const VERIFIED_STATUS = "verified";
 const ACCEPTED_STATUS = "accepted";
 const UNAVAILABLE_STATUS = 'unavailable';
 const ARRIVED_STATUS = 'arrived';
@@ -28,7 +26,9 @@ const CANCELED_BY_MASTER_STATUS = 'canceledByMaster';
 // 1. ВЫЗЫВАЕМАЯ ФУНКЦИЯ: ИНИЦИАЦИЯ ЗАКАЗА И ПОИСК (onNewEmergencyOrder)
 // -----------------------------------------------------------------------------
 exports.onNewEmergencyOrder = onCall(async (request) => {
+    console.log("🚀 START: onNewEmergencyOrder called", request.data);
 
+    // 1. Распаковка данных от клиента
     const { clientUserId, category, latitude, longitude } = request.data as {
         clientUserId: string,
         category: string,
@@ -36,11 +36,11 @@ exports.onNewEmergencyOrder = onCall(async (request) => {
         longitude: number
     };
 
-    if (!clientUserId || !category) {
-        throw new HttpsError('invalid-argument', 'Missing required order data.');
+    if (!clientUserId || !category || !latitude || !longitude) {
+        throw new HttpsError('invalid-argument', 'Missing required order data (userId, category, lat, lng).');
     }
 
-    // 1. Создаем заказ в Firestore
+    // 2. Создаем документ заказа в Firestore
     const orderRef = db.collection('orders').doc();
     const orderId = orderRef.id;
 
@@ -48,69 +48,159 @@ exports.onNewEmergencyOrder = onCall(async (request) => {
         customerId: clientUserId,
         category: category,
         clientLocation: new admin.firestore.GeoPoint(latitude, longitude),
-        status: PENDING_STATUS,
+        status: PENDING_STATUS, // "pending"
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        masterId: null // Пока мастер не назначен
     });
 
+    // 3. Подготовка к гео-поиску
     const clientLocation = new admin.firestore.GeoPoint(latitude, longitude);
-    const requiredCategory = category;
-    const clientLatLng: LatLng = {latitude: clientLocation.latitude, longitude: clientLocation.longitude};
+    const clientLatLng: LatLng = { latitude: clientLocation.latitude, longitude: clientLocation.longitude };
 
-    // --- ГЕОХЭШ-ЛОГИКА ДЛЯ ОПТИМИЗАЦИИ ПОИСКА ---
+    // Генерируем границы поиска (Geohash bounds)
     const center: [number, number] = [clientLocation.latitude, clientLocation.longitude];
-    const bounds = geohashQueryBounds(center, RADIUS_M);
+    const bounds = geohashQueryBounds(center, RADIUS_M); // 10 км
     const promises: Promise<admin.firestore.QuerySnapshot>[] = [];
 
+    console.log(`🗺️ Searching in bounds for category: '${category}' around [${latitude}, ${longitude}]`);
+
+    // 4. Выполняем запросы к базе (Только по GEOHASH, чтобы не требовать сложный индекс)
     for (const b of bounds) {
         let query = db.collection(USERS_COLLECTION)
             .orderBy('geoHash')
             .startAt(b[0])
-            .endBefore(b[1])
-            .where("role", "==", MASTER_ROLE)
-            .where("status", "==", "free")
-            .where("verificationStatus", "==", VERIFIED_STATUS)
-            .where("categories", "array-contains", requiredCategory);
+            .endBefore(b[1]);
+
         promises.push(query.get());
     }
 
     const snapshots = await Promise.all(promises);
-    const mastersToNotify: {token: string, distance: number}[] = [];
+    const mastersToNotify: { token: string, distance: number }[] = [];
     const processedMasterIds = new Set<string>();
 
+    let totalCandidates = 0;
+
+    // 5. Обрабатываем результаты и фильтруем в памяти (In-Memory Filter)
     for (const snap of snapshots) {
         for (const doc of snap.docs) {
             const masterId = doc.id;
+
+            // Защита от дубликатов (один мастер может попасть в соседние хэши)
             if (processedMasterIds.has(masterId)) continue;
             processedMasterIds.add(masterId);
 
             const master = doc.data();
-            const masterLocation = master.lastLocation as admin.firestore.GeoPoint | undefined;
+            totalCandidates++;
 
-            if (masterLocation && master.fcmToken) {
-                const masterLatLng: LatLng = {latitude: masterLocation.latitude, longitude: masterLocation.longitude};
-                const distanceMeters = getDistance(clientLatLng, masterLatLng, 100);
+            // --- ФИЛЬТРЫ ---
+
+            // А. Роль
+            if (master.role !== MASTER_ROLE) continue;
+
+            // Б. Статус (должен быть свободен)
+            if (master.status !== 'free') continue;
+
+            // В. Категория (должна быть в списке услуг мастера)
+            const masterCategories = master.categories || [];
+            if (!Array.isArray(masterCategories) || !masterCategories.includes(category)) {
+                continue;
+            }
+
+            // Г. Токен (без него нельзя отправить пуш)
+            if (!master.fcmToken) {
+                console.log(`⚠️ Candidate ${master.name || masterId} matches, but has NO TOKEN.`);
+                continue;
+            }
+
+            // Д. Дистанция (точный расчет)
+            const masterLocation = master.lastLocation as admin.firestore.GeoPoint | undefined;
+            if (masterLocation) {
+                const masterLatLng: LatLng = { latitude: masterLocation.latitude, longitude: masterLocation.longitude };
+                const distanceMeters = getDistance(clientLatLng, masterLatLng);
                 const distanceKm = distanceMeters / 1000;
 
+                // Если мастер в радиусе — добавляем в список
                 if (distanceKm <= RADIUS_KM) {
-                    mastersToNotify.push({token: master.fcmToken, distance: distanceKm});
+                    console.log(`✅ MATCH: ${master.name || masterId} found! Dist: ${distanceKm.toFixed(2)}km`);
+                    mastersToNotify.push({ token: master.fcmToken, distance: distanceKm });
                 }
             }
         }
     }
 
-    // 6. Отправка Уведомлений (FCM)
+    console.log(`📊 Search Stats: Found ${totalCandidates} raw candidates. Final matches: ${mastersToNotify.length}`);
+
+    // 6. ОТПРАВКА PUSH-УВЕДОМЛЕНИЙ
     if (mastersToNotify.length > 0) {
-      const tokens = mastersToNotify.map((m) => m.token);
-      console.log(`Notifications sent to ${tokens.length} masters for order ${orderId}.`);
+        // Убираем возможные "фейковые" токены из тестов, чтобы не засорять логи ошибками
+        const tokens = mastersToNotify
+            .map(m => m.token)
+            .filter(t => t && t.length > 20 && t !== "test_token_123");
+
+        if (tokens.length > 0) {
+            console.log(`🚀 Sending REAL notifications to ${tokens.length} devices...`);
+
+            const message = {
+                tokens: tokens, // Отправляем всем найденным мастерам сразу
+                data: {
+                    type: 'NEW_ORDER',
+                    orderId: orderId,
+                    clientId: clientUserId,
+                    category: category,
+                    lat: String(latitude),
+                    lng: String(longitude),
+                    click_action: 'FLUTTER_NOTIFICATION_CLICK' // Важно для Android
+                },
+                notification: {
+                    title: '🔥 Новый заказ рядом!',
+                    body: `Услуга: ${category}. Нажмите, чтобы принять.`
+                },
+                android: {
+                    priority: 'high' as const,
+                    notification: {
+                        channelId: 'emergency_orders',
+                        sound: 'default',
+                        priority: 'high' as const,
+                        visibility: 'public' as const
+                    }
+                },
+                apns: {
+                    payload: {
+                        aps: {
+                            sound: 'default',
+                            contentAvailable: true
+                        }
+                    }
+                }
+            };
+
+            try {
+                // Используем sendEachForMulticast для надежной отправки
+                const response = await admin.messaging().sendEachForMulticast(message);
+                console.log('📨 FCM Response:', response.successCount, 'sent successfully,', response.failureCount, 'failed.');
+
+                if (response.failureCount > 0) {
+                    console.error('Errors:', JSON.stringify(response.responses));
+                }
+            } catch (error) {
+                console.error('🔥 FCM Fatal Error:', error);
+            }
+        } else {
+            console.log("⚠️ Masters found, but tokens looked fake/invalid. No push sent.");
+        }
     } else {
-      // 7. Если нет мастеров, обновляем статус заказа
-      await db.collection("orders").doc(orderId).update({
-        status: "unassigned",
-      });
+        console.log("⚠️ No masters matched all criteria (Location + Category + Status + Token).");
+        // Опционально: Можно обновить статус заказа на 'no_masters'
+        // await orderRef.update({ status: 'unassigned' });
     }
 
-    return { success: true, orderId: orderId, mastersFound: mastersToNotify.length };
+    return {
+        success: true,
+        orderId: orderId,
+        mastersFound: mastersToNotify.length
+    };
 });
+
 
 // -----------------------------------------------------------------------------
 // 2. ТРИГГЕР: ОБНОВЛЕНИЕ СРЕДНЕГО РЕЙТИНГА МАСТЕРА (onNewReview)

@@ -1,10 +1,13 @@
+// Файл: lib/screens/client/emergency_call_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart'; // ✅ Важный импорт
 import 'package:bolt_usta/core/app_constants.dart';
 import 'package:bolt_usta/services/order_service.dart';
-import 'package:bolt_usta/screens/customer/active_order_screen.dart';
-import 'dart:async'; // 💡 ИСПРАВЛЕНИЕ: Добавлен импорт для TimeoutException
+import 'package:bolt_usta/screens/client/active_order_screen.dart'; // Проверь этот путь
+import 'dart:async';
 
 class EmergencyCallScreen extends StatefulWidget {
   final String customerId;
@@ -17,7 +20,7 @@ class EmergencyCallScreen extends StatefulWidget {
 
 class _EmergencyCallScreenState extends State<EmergencyCallScreen> {
   final OrderService _orderService = OrderService();
-  String? _selectedCategory; // Kateqoriya
+  String? _selectedCategory;
   final TextEditingController _descriptionController = TextEditingController();
   bool _isLoading = false;
   String? _locationError;
@@ -26,7 +29,6 @@ class _EmergencyCallScreenState extends State<EmergencyCallScreen> {
   @override
   void initState() {
     super.initState();
-    // Вызываем асинхронную функцию после завершения отрисовки фрейма
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _determinePosition();
     });
@@ -38,19 +40,14 @@ class _EmergencyCallScreenState extends State<EmergencyCallScreen> {
     super.dispose();
   }
 
-  // --------------------------------------------------------------------------
-  // ЛОГИКА ГЕОЛОКАЦИИ (Geolocator)
-  // --------------------------------------------------------------------------
-
+  // --- 1. ГЕОЛОКАЦИЯ ---
   Future<bool> _handleLocationPermission() async {
     bool serviceEnabled;
     LocationPermission permission;
 
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      setState(() {
-        _locationError = 'Zəhmət olmasa, GPS/Yerləşmə xidmətlərini yandırın.';
-      });
+      setState(() => _locationError = 'Zəhmət olmasa, GPS xidmətini yandırın.');
       return false;
     }
 
@@ -58,17 +55,13 @@ class _EmergencyCallScreenState extends State<EmergencyCallScreen> {
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
-        setState(() {
-          _locationError = 'Yerləşməyə giriş rədd edildi.';
-        });
+        setState(() => _locationError = 'Yerləşməyə icazə verilmədi.');
         return false;
       }
     }
 
     if (permission == LocationPermission.deniedForever) {
-      setState(() {
-        _locationError = 'Yerləşməyə giriş qəti qadağandır. Tətbiq parametrlərini yoxlayın.';
-      });
+      setState(() => _locationError = 'Yerləşməyə icazə bloklanıb.');
       return false;
     }
 
@@ -90,197 +83,137 @@ class _EmergencyCallScreenState extends State<EmergencyCallScreen> {
     }
 
     try {
-      // ✅ ДОБАВЛЕН ТАЙМ-АУТ, чтобы избежать зависания ANR
+      // Пытаемся получить координаты с таймаутом
       Position position = await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.high
-      ).timeout(const Duration(seconds: 10)); // Таймаут 10 секунд
+      ).timeout(const Duration(seconds: 10));
 
       setState(() {
         _currentPosition = position;
         _locationError = null;
       });
-    } on TimeoutException { // ✅ ИСПРАВЛЕНИЕ: Теперь TimeoutException распознается
-      setState(() {
-        _locationError = 'Yerləşmə təyin edilmədi. Vaxt başa çatdı.'; // Таймаут
-      });
+    } on TimeoutException {
+      setState(() => _locationError = 'Yerləşmə təyin edilmədi (Timeout).');
     } catch (e) {
-      setState(() {
-        _locationError = 'Yerləşməni təyin edərkən xəta: $e';
-      });
+      setState(() => _locationError = 'Xəta: $e');
     } finally {
       setState(() => _isLoading = false);
     }
   }
 
-
-  // --------------------------------------------------------------------------
-  // ЛОГИКА СОЗДАНИЯ ЗАКАЗА (Срочный Вызов)
-  // --------------------------------------------------------------------------
-
+  // --- 2. ВЫЗОВ МАСТЕРА (CLOUD FUNCTION) ---
   Future<void> _callMaster() async {
     if (_selectedCategory == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Zəhmət olmasa, Kateqoriya seçin.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kateqoriya seçin.')));
       return;
     }
+    // Если координат нет — пробуем найти снова
     if (_currentPosition == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Yerləşmə məlumatı yoxdur. Yenidən cəhd edin.')),
-      );
-      // Если позиции нет, пытаемся определить ее снова
       await _determinePosition();
-      return;
+      if (_currentPosition == null) return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
     try {
-      // 1. Фиксируем координаты для Firestore
-      final clientGeoPoint = GeoPoint(
-          _currentPosition!.latitude,
-          _currentPosition!.longitude
-      );
+      // ✅ ГЛАВНОЕ: Вызов Cloud Function через сервис
+      final clientLatLng = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
 
-      // 2. Создаём Заказ
-      final orderId = await _orderService.createEmergencyOrder(
-        customerId: widget.customerId,
+      print("DEBUG: Начинаем вызов Cloud Function...");
+
+      final orderId = await _orderService.initiateEmergencyOrder(
+        clientUserId: widget.customerId,
         category: _selectedCategory!,
-        problemDescription: _descriptionController.text.trim(),
-        clientLocation: clientGeoPoint,
+        clientLocation: clientLatLng,
       );
 
-      // 3. Навигация на экран отслеживания
+      print("DEBUG: Cloud Function успешно отработала. Order ID: $orderId");
+
       if (mounted) {
-        // Замена текущего экрана на экран Активного Заказа
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => ActiveOrderScreen(orderId: orderId)),
         );
       }
 
     } catch (e) {
-      print('Ошибка при вызове мастера: $e');
+      print('Ошибка OrderService: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Sifariş yaratmaqda xəta baş verdi.')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Xəta: $e')));
       }
     } finally {
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+        setState(() => _isLoading = false);
       }
     }
   }
 
-  // --------------------------------------------------------------------------
-  // UI
-  // --------------------------------------------------------------------------
-
   @override
   Widget build(BuildContext context) {
-    // Определяем статус для индикатора загрузки
-    final isDeterminingLocation = _currentPosition == null && _locationError == null && _isLoading;
-    final isButtonDisabled = _isLoading || _currentPosition == null || _locationError != null;
+    // Логика блокировки кнопки
+    final bool isLocationReady = _currentPosition != null;
+    final bool isBusy = _isLoading;
+    final bool hasError = _locationError != null;
+    final bool isButtonEnabled = isLocationReady && !isBusy && !hasError;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Təcili Usta Çağır')), // Срочный вызов мастера
+      appBar: AppBar(title: const Text('Təcili Usta Çağır')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 1. Поле выбора "Kateqoriya" (Категория)
-            const Text('1. Usta Kateqoriyasını Seçin:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 10),
+            // Категория
+            const Text('Kateqoriya:', style: TextStyle(fontWeight: FontWeight.bold)),
             DropdownButtonFormField<String>(
-              decoration: const InputDecoration(border: OutlineInputBorder()),
-              hint: const Text('Kateqoriya'),
+              hint: const Text('Seçin'),
               value: _selectedCategory,
-              items: AppConstants.serviceCategories.map((String category) {
-                return DropdownMenuItem<String>(
-                    value: category,
-                    child: Text(category)
-                );
-              }).toList(),
-              onChanged: (String? newValue) {
-                setState(() => _selectedCategory = newValue);
-              },
+              items: AppConstants.serviceCategories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+              onChanged: (v) => setState(() => _selectedCategory = v),
             ),
+            const SizedBox(height: 20),
 
-            const SizedBox(height: 30),
-
-            // 2. Геолокация и Статус
-            const Text('2. Yerləşmə Məlumatı:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 10),
+            // Локация
+            const Text('Məkan:', style: TextStyle(fontWeight: FontWeight.bold)),
             Container(
               padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(8),
-              ),
+              color: Colors.grey[100],
               child: Row(
                 children: [
-                  Icon(Icons.location_on,
-                      color: _locationError != null ? Colors.red : (_currentPosition != null ? Colors.green : Colors.grey)),
+                  Icon(Icons.location_on, color: hasError ? Colors.red : (isLocationReady ? Colors.green : Colors.grey)),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      _locationError ?? (_currentPosition != null
-                          ? 'Koordinatlar alınıb: ${_currentPosition!.latitude.toStringAsFixed(4)}...' // Координаты получены
-                          : 'Yerləşmə təyin edilir...' // Местоположение определяется
-                      ),
-                      style: TextStyle(color: _locationError != null ? Colors.red : Colors.black87),
+                      hasError ? _locationError!
+                          : (isLocationReady ? 'Hazır: ${_currentPosition!.latitude}, ${_currentPosition!.longitude}'
+                          : 'Məkan axtarılır...'),
                     ),
                   ),
-                  if (isDeterminingLocation) // Индикатор загрузки местоположения
-                    SizedBox(
-                        height: 20, width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blue.shade700)
-                    ),
-                  if (_locationError != null) // Кнопка перезагрузки
-                    IconButton(icon: const Icon(Icons.refresh), onPressed: _determinePosition),
+                  if (!isLocationReady && !hasError) const CircularProgressIndicator.adaptive(),
+                  IconButton(icon: const Icon(Icons.refresh), onPressed: _determinePosition),
                 ],
               ),
             ),
+            const SizedBox(height: 20),
 
-            const SizedBox(height: 30),
-
-            // 3. Поле "Problemin Qısa Təsviri"
-            const Text('3. Problemi Qısa Təsvir Edin:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 10),
+            // Описание
             TextFormField(
               controller: _descriptionController,
-              decoration: const InputDecoration(
-                labelText: 'Məsələn: Soyuducu işləmir...',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
+              decoration: const InputDecoration(labelText: 'Problem təsviri', border: OutlineInputBorder()),
+              maxLines: 2,
             ),
+            const SizedBox(height: 40),
 
-            const SizedBox(height: 50),
-
-            // 4. Кнопка "Təcili Usta Çağır"
+            // Кнопка
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: isButtonDisabled ? null : _callMaster,
-                icon: _isLoading
-                    ? const SizedBox.shrink()
-                    : const Icon(Icons.send, color: Colors.white),
-                label: Text(
-                  _isLoading ? 'Sifariş göndərilir...' : 'Təcili Usta Çağır',
-                  style: const TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red.shade700,
-                  padding: const EdgeInsets.symmetric(vertical: 18),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  elevation: 5,
-                ),
+              height: 50,
+              child: ElevatedButton(
+                // Если GPS нет — кнопка серая (null)
+                onPressed: isButtonEnabled ? _callMaster : null,
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: _isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text('ÇAĞIR (TEST)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               ),
             ),
           ],

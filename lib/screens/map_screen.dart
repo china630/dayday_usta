@@ -1,4 +1,4 @@
-// lib/screens/map_screen.dart (Финальная Рабочая Версия)
+// lib/screens/map_screen.dart (Финальная Рабочая Версия с Авто-Зумом)
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -52,7 +52,7 @@ class _MapScreenState extends State<MapScreen> {
     super.dispose();
   }
 
-  // Методы определения позиции и старта поиска... (оставлены без изменений)
+  // Методы определения позиции и старта поиска...
 
   Future<void> _determinePosition() async {
     try {
@@ -82,23 +82,62 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
+  // ✅ ИЗМЕНЕНИЕ 1: Обновленная логика приема списка + Авто-зум
   void _onNewMasterList(List<MasterMapData> newMasters) {
+    debugPrint("DEBUG: UI получил ${newMasters.length} мастеров. Обновляем маркеры.");
+
     setState(() {
       _availableMasters = newMasters;
     });
+
+    // Если мастера найдены, сфокусируем камеру, чтобы увидеть их всех
+    if (newMasters.isNotEmpty && mapController != null && _currentPosition != null) {
+      _zoomToFitMasters(newMasters);
+    }
+  }
+
+  // ✅ НОВЫЙ МЕТОД: Умный зум (показывает и клиента, и всех мастеров)
+  void _zoomToFitMasters(List<MasterMapData> masters) {
+    if (_currentPosition == null) return;
+
+    // 1. Создаем границы, включающие Клиента
+    double minLat = _currentPosition!.latitude;
+    double maxLat = _currentPosition!.latitude;
+    double minLng = _currentPosition!.longitude;
+    double maxLng = _currentPosition!.longitude;
+
+    // 2. Расширяем границы, чтобы включить каждого Мастера
+    for (var m in masters) {
+      if (m.lastLocation.latitude < minLat) minLat = m.lastLocation.latitude;
+      if (m.lastLocation.latitude > maxLat) maxLat = m.lastLocation.latitude;
+      if (m.lastLocation.longitude < minLng) minLng = m.lastLocation.longitude;
+      if (m.lastLocation.longitude > maxLng) maxLng = m.lastLocation.longitude;
+    }
+
+    final bounds = LatLngBounds(
+      southwest: LatLng(minLat, minLng),
+      northeast: LatLng(maxLat, maxLng),
+    );
+
+    // 3. Анимируем камеру с отступами (padding = 100), чтобы маркеры не прилипали к краям
+    try {
+      mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 100));
+    } catch (e) {
+      debugPrint("Ошибка анимации камеры: $e");
+    }
   }
 
   Set<Marker> _createMarkers() {
-    // ... (логика создания маркеров)
     final Set<Marker> markers = {};
 
-    // 1. Маркеры доступных мастеров
+    // ✅ ИЗМЕНЕНИЕ 2: Маркеры мастеров теперь ЗЕЛЕНЫЕ (hueGreen)
     for (var master in _availableMasters) {
       markers.add(
         Marker(
           markerId: MarkerId(master.profile.uid),
           position: master.lastLocation,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+          // Сделали зеленым для контраста
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
           infoWindow: InfoWindow(
             title: master.profile.fullName,
             snippet: 'Рейтинг: ${master.profile.rating.toStringAsFixed(1)} | ${master.distanceKm.toStringAsFixed(1)} км',
@@ -128,8 +167,6 @@ class _MapScreenState extends State<MapScreen> {
     setState(() { _isOrderProcessing = true; });
 
     try {
-      // Инициация заказа НЕ здесь, а на OrderSearchScreen, чтобы таймер шел сразу
-
       if (mounted) {
         // Переход на экран поиска/ожидания заказа (II. Логика Неудачного Поиска)
         await Navigator.of(context).push(
