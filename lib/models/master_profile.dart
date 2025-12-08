@@ -1,92 +1,89 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:bolt_usta/core/app_constants.dart';
 import 'package:bolt_usta/models/user_profile.dart';
+import 'package:bolt_usta/core/app_constants.dart';
 
-// Расширенный профиль для Мастера (Usta)
 class MasterProfile extends UserProfile {
-  final double rating;
-  final String status;
-  final String verificationStatus;
   final List<String> categories;
   final List<String> districts;
+  final String status;
+  final String verificationStatus;
+  final String achievements; // "Haqqında"
   final String priceList;
-  final String achievements;
-
+  final double rating;
   final int viewsCount;
   final int callsCount;
   final int savesCount;
 
-  // ✅ НОВОЕ ПОЛЕ: Счетчик последовательных отказов
-  final int consecutiveRejections;
-
-  // КОНСТРУКТОР
   MasterProfile({
-    required super.uid,
-    required super.phoneNumber,
-    required super.createdAt,
-    required super.name,
-    required super.surname,
-    super.fcmToken,
-    this.rating = 0.0,
-    this.status = AppConstants.masterStatusBusy,
-    this.verificationStatus = AppConstants.verificationPending,
-    this.categories = const [],
-    this.districts = const [],
-    this.priceList = '',
+    required String uid,
+    required String phoneNumber,
+    required String role,
+    required DateTime createdAt,
+    required String name,
+    required String surname,
+    String? fcmToken,
+    // Мастер-специфичные поля
+    required this.categories,
+    required this.districts,
+    required this.status,
+    required this.verificationStatus,
     this.achievements = '',
+    this.priceList = '',
+    this.rating = 5.0,
     this.viewsCount = 0,
     this.callsCount = 0,
     this.savesCount = 0,
-    // ✅ НОВЫЙ ИМЕНОВАННЫЙ АРГУМЕНТ
-    this.consecutiveRejections = 0,
-  }) : super(role: AppConstants.dbRoleMaster);
+  }) : super(
+    uid: uid,
+    phoneNumber: phoneNumber,
+    role: role,
+    createdAt: createdAt,
+    name: name,
+    surname: surname,
+    fcmToken: fcmToken,
+  );
 
-  // 1. ФАБРИЧНЫЙ МЕТОД
-  factory MasterProfile.fromFirestore(Map<String, dynamic> data) {
-    // В MasterMapData.dart id документа передается как 'uid'
-    final user = UserProfile.fromFirestore(data);
-
-    return MasterProfile(
-      uid: user.uid,
-      phoneNumber: user.phoneNumber,
-      createdAt: user.createdAt,
-      name: user.name,
-      surname: user.surname,
-      fcmToken: user.fcmToken,
-
-      rating: (data['rating'] as num?)?.toDouble() ?? 0.0,
-      status: data['status'] ?? AppConstants.masterStatusFree,
-      verificationStatus: data['verificationStatus'] ?? AppConstants.verificationPending,
-      categories: List<String>.from(data['categories'] ?? []),
-      districts: List<String>.from(data['districts'] ?? []),
-      priceList: data['priceList'] ?? '',
-      achievements: data['achievements'] ?? '',
-      viewsCount: data['viewsCount'] ?? 0,
-      callsCount: data['callsCount'] ?? 0,
-      savesCount: data['savesCount'] ?? 0,
-      // ✅ ПРИСВОЕНИЕ НОВОГО ПОЛЯ
-      consecutiveRejections: data['consecutiveRejections'] ?? 0,
-    );
-  }
-
-  // 2. TO_FIRESTORE
+  // ✅ Исправленный toFirestore (объединяет данные родителя и свои)
   @override
   Map<String, dynamic> toFirestore() {
-    final base = super.toFirestore();
+    final baseData = super.toFirestore(); // Берем данные UserProfile
+
     return {
-      ...base,
-      'rating': rating,
-      'status': status,
-      'verificationStatus': verificationStatus,
+      ...baseData, // Разворачиваем базовые данные
       'categories': categories,
       'districts': districts,
-      'priceList': priceList,
+      'status': status,
+      'verificationStatus': verificationStatus,
       'achievements': achievements,
+      'priceList': priceList,
+      'rating': rating,
       'viewsCount': viewsCount,
       'callsCount': callsCount,
       'savesCount': savesCount,
-      // ✅ ДОБАВЛЕНИЕ НОВОГО ПОЛЯ
-      'consecutiveRejections': consecutiveRejections,
     };
+  }
+
+  // Фабрика для создания из Firestore
+  factory MasterProfile.fromFirestore(Map<String, dynamic> data) {
+    return MasterProfile(
+      uid: data['uid'] ?? '',
+      phoneNumber: data['phoneNumber'] ?? '',
+      role: data['role'] ?? 'master',
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      name: data['name'] ?? '',
+      surname: data['surname'] ?? '',
+      fcmToken: data['fcmToken'],
+
+      categories: List<String>.from(data['categories'] ?? []),
+      districts: List<String>.from(data['districts'] ?? []),
+      status: data['status'] ?? AppConstants.masterStatusUnavailable,
+      verificationStatus: data['verificationStatus'] ?? AppConstants.verificationPending,
+      achievements: data['achievements'] ?? '',
+      priceList: data['priceList'] ?? '',
+      rating: (data['rating'] ?? 5.0).toDouble(),
+      viewsCount: data['viewsCount'] ?? 0,
+      callsCount: data['callsCount'] ?? 0,
+      savesCount: data['savesCount'] ?? 0,
+    );
   }
 }

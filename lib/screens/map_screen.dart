@@ -1,15 +1,17 @@
-// lib/screens/map_screen.dart (Финальная Рабочая Версия с Авто-Зумом)
-
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:bolt_usta/services/master_search_service.dart';
-import 'package:bolt_usta/core/app_constants.dart';
-import 'package:bolt_usta/models/master_map_data.dart';
-import 'package:bolt_usta/services/order_service.dart';
-import 'package:bolt_usta/screens/order_search_screen.dart'; // Для перехода на экран поиска
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:collection/collection.dart';
+
+import 'package:bolt_usta/services/master_search_service.dart';
+import 'package:bolt_usta/services/metadata_service.dart';
+import 'package:bolt_usta/models/master_map_data.dart';
+import 'package:bolt_usta/screens/order_tracking_screen.dart';
+import 'package:bolt_usta/screens/client/modals//order_creation_modal.dart';
+import 'package:bolt_usta/core/app_colors.dart';
 
 class MapScreen extends StatefulWidget {
   final String currentUserId;
@@ -21,29 +23,45 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
-  static const CameraPosition _initialCameraPosition = CameraPosition(
-    target: LatLng(40.377033, 49.830602),
-    zoom: 12,
-  );
-
   GoogleMapController? mapController;
   Position? _currentPosition;
   bool _isLoading = true;
   String _locationError = '';
 
   final MasterSearchService _searchService = MasterSearchService();
+  final MetadataService _metadataService = MetadataService();
+
   StreamSubscription<List<MasterMapData>>? _masterStreamSubscription;
   List<MasterMapData> _availableMasters = [];
 
+  List<String> _categories = [];
   String? _selectedCategory;
-  bool _isOrderProcessing = false;
+  String? _mapStyle;
 
   @override
   void initState() {
     super.initState();
-    // Устанавливаем первую категорию по умолчанию
-    _selectedCategory = AppConstants.serviceCategories.firstOrNull;
-    _determinePosition();
+    _initMapData();
+  }
+
+  Future<void> _initMapData() async {
+    await _loadMapStyle();
+    final cats = await _metadataService.getCategories();
+    if (mounted) {
+      setState(() {
+        _categories = cats;
+        _selectedCategory = null;
+      });
+      _determinePosition();
+    }
+  }
+
+  Future<void> _loadMapStyle() async {
+    try {
+      _mapStyle = await rootBundle.loadString('assets/map_style.json');
+    } catch (e) {
+      debugPrint("Ошибка загрузки стиля карты: $e");
+    }
   }
 
   @override
@@ -52,20 +70,19 @@ class _MapScreenState extends State<MapScreen> {
     super.dispose();
   }
 
-  // Методы определения позиции и старта поиска...
-
   Future<void> _determinePosition() async {
     try {
-      final position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high);
+      final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
       setState(() {
         _currentPosition = position;
         _isLoading = false;
       });
-      _startMasterSearch(position, _selectedCategory);
+      if (_selectedCategory != null) {
+        _startMasterSearch(position, _selectedCategory);
+      }
     } catch (e) {
       setState(() {
-        _locationError = 'Не удалось получить ваше местоположение: $e';
+        _locationError = 'Не удалось получить местоположение: $e';
         _isLoading = false;
       });
     }
@@ -82,114 +99,38 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
-  // ✅ ИЗМЕНЕНИЕ 1: Обновленная логика приема списка + Авто-зум
   void _onNewMasterList(List<MasterMapData> newMasters) {
-    debugPrint("DEBUG: UI получил ${newMasters.length} мастеров. Обновляем маркеры.");
-
+    if (!mounted) return;
     setState(() {
       _availableMasters = newMasters;
     });
-
-    // Если мастера найдены, сфокусируем камеру, чтобы увидеть их всех
-    if (newMasters.isNotEmpty && mapController != null && _currentPosition != null) {
-      _zoomToFitMasters(newMasters);
-    }
-  }
-
-  // ✅ НОВЫЙ МЕТОД: Умный зум (показывает и клиента, и всех мастеров)
-  void _zoomToFitMasters(List<MasterMapData> masters) {
-    if (_currentPosition == null) return;
-
-    // 1. Создаем границы, включающие Клиента
-    double minLat = _currentPosition!.latitude;
-    double maxLat = _currentPosition!.latitude;
-    double minLng = _currentPosition!.longitude;
-    double maxLng = _currentPosition!.longitude;
-
-    // 2. Расширяем границы, чтобы включить каждого Мастера
-    for (var m in masters) {
-      if (m.lastLocation.latitude < minLat) minLat = m.lastLocation.latitude;
-      if (m.lastLocation.latitude > maxLat) maxLat = m.lastLocation.latitude;
-      if (m.lastLocation.longitude < minLng) minLng = m.lastLocation.longitude;
-      if (m.lastLocation.longitude > maxLng) maxLng = m.lastLocation.longitude;
-    }
-
-    final bounds = LatLngBounds(
-      southwest: LatLng(minLat, minLng),
-      northeast: LatLng(maxLat, maxLng),
-    );
-
-    // 3. Анимируем камеру с отступами (padding = 100), чтобы маркеры не прилипали к краям
-    try {
-      mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 100));
-    } catch (e) {
-      debugPrint("Ошибка анимации камеры: $e");
-    }
   }
 
   Set<Marker> _createMarkers() {
     final Set<Marker> markers = {};
-
-    // ✅ ИЗМЕНЕНИЕ 2: Маркеры мастеров теперь ЗЕЛЕНЫЕ (hueGreen)
     for (var master in _availableMasters) {
       markers.add(
         Marker(
           markerId: MarkerId(master.profile.uid),
           position: master.lastLocation,
-          // Сделали зеленым для контраста
           icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
           infoWindow: InfoWindow(
             title: master.profile.fullName,
-            snippet: 'Рейтинг: ${master.profile.rating.toStringAsFixed(1)} | ${master.distanceKm.toStringAsFixed(1)} км',
+            snippet: '${master.profile.rating.toStringAsFixed(1)} ★',
           ),
         ),
       );
     }
-
-    // 2. Маркер текущей позиции клиента (Красный)
     if (_currentPosition != null) {
       markers.add(
         Marker(
           markerId: const MarkerId('clientLocation'),
           position: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
           icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-          infoWindow: const InfoWindow(title: 'Ваше местоположение'),
         ),
       );
     }
     return markers;
-  }
-
-  // P2.4: Инициация срочного заказа (переход на OrderSearchScreen)
-  Future<void> _initiateEmergencyOrder() async {
-    if (_currentPosition == null || _selectedCategory == null || _isOrderProcessing) return;
-
-    setState(() { _isOrderProcessing = true; });
-
-    try {
-      if (mounted) {
-        // Переход на экран поиска/ожидания заказа (II. Логика Неудачного Поиска)
-        await Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => OrderSearchScreen(
-              clientUserId: widget.currentUserId,
-              category: _selectedCategory!,
-              clientLocation: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка при подготовке заказа: $e')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() { _isOrderProcessing = false; });
-      }
-    }
   }
 
   void _onCategoryChanged(String? newCategory) {
@@ -202,88 +143,185 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  Future<void> _openOrderCreationModal() async {
+    if (_currentPosition == null || _selectedCategory == null) return;
+
+    // ✅ ОПРЕДЕЛЯЕМ: Можно ли делать срочный заказ?
+    // Если мастеров нет (список пуст), то срочный заказ невозможен.
+    final bool canDoEmergency = _availableMasters.isNotEmpty;
+
+    final result = await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => OrderCreationModal(
+        clientUserId: widget.currentUserId,
+        category: _selectedCategory!,
+        location: GeoPoint(_currentPosition!.latitude, _currentPosition!.longitude),
+        targetMasterId: null,
+        // ✅ ПЕРЕДАЕМ ФЛАГ: Разрешен ли срочный вызов?
+        allowEmergency: canDoEmergency,
+      ),
+    );
+
+    if (result != null && result is Map<String, dynamic> && mounted) {
+      final orderId = result['orderId'];
+      final mode = result['mode'];
+
+      if (mode == 'emergency') {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => OrderTrackingScreen(
+              orderId: orderId,
+              clientLocation: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sifariş planlaşdırıldı!')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (_locationError.isNotEmpty) {
-      return Scaffold(body: Center(child: Text(_locationError, textAlign: TextAlign.center, style: const TextStyle(color: Colors.red))));
+      return Scaffold(body: Center(child: Text(_locationError, style: const TextStyle(color: Colors.red))));
     }
 
     final initialTarget = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
     final markers = _createMarkers();
-    final masterCountText = 'Найдено доступных мастеров: ${_availableMasters.length}';
-    final isMasterAvailable = _availableMasters.isNotEmpty;
+
+    final bool isCategorySelected = _selectedCategory != null;
+    final bool isMasterAvailable = _availableMasters.isNotEmpty;
+
+    String buttonText;
+    if (!isCategorySelected) {
+      buttonText = 'XİDMƏT SEÇİN';
+    } else if (!isMasterAvailable) {
+      buttonText = 'USTA YOXDUR (Planlı sifariş et)';
+    } else {
+      buttonText = 'USTA ÇAĞIR';
+    }
 
     return Scaffold(
       body: Stack(
         children: [
-          // КАРТА и МАРКЕРЫ
           GoogleMap(
             mapType: MapType.normal,
-            initialCameraPosition: CameraPosition(target: initialTarget, zoom: 14),
-            onMapCreated: (controller) => mapController = controller,
+            initialCameraPosition: CameraPosition(target: initialTarget, zoom: 15),
+            onMapCreated: (controller) {
+              mapController = controller;
+              if (_mapStyle != null) mapController!.setMapStyle(_mapStyle);
+            },
             markers: markers,
             myLocationEnabled: true,
-            myLocationButtonEnabled: true,
+            myLocationButtonEnabled: false,
+            zoomControlsEnabled: false,
+            compassEnabled: false,
+            mapToolbarEnabled: false,
           ),
 
-          // P2.2: Выбор категории (Фильтр)
+          // Карточка фильтров
           Positioned(
-            top: 40,
-            left: 10,
-            right: 10,
-            child: Card(
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 4.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      masterCountText,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                    ),
-                    DropdownButton<String>(
+            top: 60,
+            left: 20,
+            right: 20,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 15,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Nəyi təmir edirik?',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 13, fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(height: 5),
+                  DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
                       value: _selectedCategory,
-                      hint: const Text('Выберите категорию'),
                       isExpanded: true,
+                      hint: Text("Kateqoriya Seç", style: TextStyle(color: kDarkColor.withOpacity(0.5), fontSize: 18, fontWeight: FontWeight.w600)),
+                      icon: const Icon(Icons.keyboard_arrow_down, color: kPrimaryColor),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: kDarkColor,
+                        fontFamily: 'Montserrat',
+                      ),
                       onChanged: _onCategoryChanged,
-                      items: AppConstants.serviceCategories.map((String value) {
+                      items: _categories.map((String value) {
                         return DropdownMenuItem<String>(
                           value: value,
                           child: Text(value),
                         );
                       }).toList(),
                     ),
-                  ],
-                ),
+                  ),
+                  if (isCategorySelected)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(color: kPrimaryColor.withOpacity(0.1), shape: BoxShape.circle),
+                            child: const Icon(Icons.people, size: 14, color: kPrimaryColor),
+                          ),
+                          const SizedBox(width: 8),
+                          // ✅ ИСПРАВЛЕНИЕ: Выводим количество (.length), а не сам список
+                          Text(
+                            '${_availableMasters.length} usta yaxınlıqda',
+                            style: const TextStyle(color: kPrimaryColor, fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    )
+                ],
               ),
             ),
           ),
 
-          // P2.4: Кнопка быстрого срочного заказа (Восстановлена)
+          // Кнопка вызова
           Positioned(
-            bottom: 20,
+            bottom: 30,
             left: 20,
             right: 20,
-            child: ElevatedButton(
-              onPressed: isMasterAvailable && !_isOrderProcessing ? _initiateEmergencyOrder : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: isMasterAvailable ? Colors.deepOrange : Colors.grey,
-                padding: const EdgeInsets.symmetric(vertical: 15),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                elevation: 5,
-              ),
-              child: _isOrderProcessing
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : Text(
-                isMasterAvailable ? 'SÜRATLİ SİFARİŞ (BOLT)' : 'Мастера недоступны',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                // Кнопка активна, если выбрана категория (даже если мастеров нет)
+                onPressed: isCategorySelected ? _openOrderCreationModal : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kPrimaryColor,
+                  disabledBackgroundColor: Colors.grey[300],
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 18),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  elevation: 5,
+                  shadowColor: kPrimaryColor.withOpacity(0.4),
+                ),
+                child: Text(
+                  buttonText,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: 1.0),
+                ),
               ),
             ),
           ),

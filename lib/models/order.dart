@@ -1,16 +1,33 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:bolt_usta/core/app_constants.dart';
 
-// Модель Заказа (Sifariş) [cite: 7]
+// ✅ Тип заказа: Срочный (Bolt) или Плановый (по записи)
+enum OrderType {
+  emergency, // Срочно (сейчас)
+  scheduled  // Запланировано
+}
+
+// ✅ Источник заказа: Автопоиск или Прямой выбор из каталога
+enum OrderSource {
+  boltSearch,   // "Найти любого"
+  catalogDirect // "Предложить этому мастеру"
+}
+
+// Модель Заказа (Sifariş)
 class Order {
   final String id;
   final String customerId;
-  final String category; // Kateqoriya [cite: 67]
-  final String problemDescription; // Problemin Qısa Təsviri [cite: 67]
-  final GeoPoint clientLocation; // Гео-локация клиента [cite: 68]
-  final String status; // 'pending', 'accepted', 'arrived', 'completed', 'cancelled' [cite: 33-37]
+  final String category; // Kateqoriya
+  final String problemDescription; // Problemin Qısa Təsviri
+  final GeoPoint clientLocation; // Гео-локация клиента
+  final String status; // 'pending', 'accepted', 'arrived', 'completed', 'cancelled'
   final String? masterId; // ID мастера, принявшего заказ
   final DateTime createdAt;
+
+  // ✅ НОВЫЕ ПОЛЯ (из Аудита)
+  final OrderType type;           // Тип: Срочно / План
+  final DateTime? scheduledTime;  // Время визита (если План)
+  final OrderSource source;       // Источник: Поиск / Каталог
 
   Order({
     required this.id,
@@ -21,10 +38,22 @@ class Order {
     required this.createdAt,
     this.status = AppConstants.orderStatusPending,
     this.masterId,
+    // Дефолтные значения для обратной совместимости
+    this.type = OrderType.emergency,
+    this.scheduledTime,
+    this.source = OrderSource.boltSearch,
   });
 
   factory Order.fromFirestore(Map<String, dynamic> data, String id) {
     Timestamp ts = data['createdAt'] ?? Timestamp.now();
+    Timestamp? scheduledTs = data['scheduledTime'];
+
+    // Парсинг Enum-ов (защита от null)
+    OrderType parsedType = OrderType.emergency;
+    if (data['type'] == 'scheduled') parsedType = OrderType.scheduled;
+
+    OrderSource parsedSource = OrderSource.boltSearch;
+    if (data['source'] == 'catalogDirect') parsedSource = OrderSource.catalogDirect;
 
     return Order(
       id: id,
@@ -35,6 +64,10 @@ class Order {
       status: data['status'] ?? AppConstants.orderStatusPending,
       masterId: data['masterId'],
       createdAt: ts.toDate(),
+      // ✅ Инициализация новых полей
+      type: parsedType,
+      scheduledTime: scheduledTs?.toDate(),
+      source: parsedSource,
     );
   }
 
@@ -47,6 +80,10 @@ class Order {
       'status': status,
       'masterId': masterId,
       'createdAt': FieldValue.serverTimestamp(),
+      // ✅ Сохранение новых полей
+      'type': type == OrderType.scheduled ? 'scheduled' : 'emergency',
+      'scheduledTime': scheduledTime != null ? Timestamp.fromDate(scheduledTime!) : null,
+      'source': source == OrderSource.catalogDirect ? 'catalogDirect' : 'boltSearch',
     };
   }
 }

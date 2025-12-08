@@ -1,11 +1,9 @@
-// lib/services/order_service.dart
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:bolt_usta/core/app_constants.dart';
-import 'package:bolt_usta/models/order.dart' as app_order;
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart'; // ✅ НОВЫЙ ИМПОРТ
+import 'package:bolt_usta/core/app_constants.dart';
+// ✅ Используем префикс, чтобы избежать конфликта имен
+import 'package:bolt_usta/models/order.dart' as app_order;
 
 class OrderService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -14,92 +12,93 @@ class OrderService {
   );
   final String _ordersCollection = 'orders';
 
+  // --------------------------------------------------------------------------
+  // 1. CUSTOMER FUNCTIONALITY
+  // --------------------------------------------------------------------------
 
-  // ✅ НОВЫЙ ВРЕМЕННЫЙ МЕТОД: Для вызова генерации тестовых данных
-  Future<int> generateMasterTestData() async {
+  Future<bool> hasActiveOrderInCategory(String customerId, String category) async {
     try {
-      // Вызываем Callable Function generateTestData
-      // NOTE: Это требует, чтобы аутентифицированный пользователь имел права admin!
-      final result = await _functions.httpsCallable('generateTestData').call<Map<String, dynamic>>({});
+      final snapshot = await _db.collection(_ordersCollection)
+          .where('customerId', isEqualTo: customerId)
+          .where('category', isEqualTo: category)
+          .where('status', whereIn: [
+        AppConstants.orderStatusPending,
+        AppConstants.orderStatusAccepted,
+        AppConstants.orderStatusArrived,
+      ])
+          .limit(1)
+          .get();
 
-      if (result.data != null && result.data!['count'] is int) {
-        return result.data!['count'] as int; // Возвращает количество созданных документов
-      }
-      throw Exception('Функция не вернула количество созданных документов.');
-    } on FirebaseFunctionsException catch (e) {
-      debugPrint('Generation Error: ${e.code} - ${e.message}');
-      throw Exception('Ошибка генерации данных: ${e.message}');
+      return snapshot.docs.isNotEmpty;
+    } catch (e) {
+      debugPrint("Error checking active orders: $e");
+      return false;
     }
   }
 
-
-  // --------------------------------------------------------------------------
-  // 1. ФУНКЦИОНАЛ КЛИЕНТА (СОЗДАНИЕ ЗАКАЗА)
-  // --------------------------------------------------------------------------
-
-  // ✅ НОВЫЙ МЕТОД (P2.4): initiateEmergencyOrder
-  // Используется для запуска оптимизированного GeoHash-поиска через Cloud Function.
-  Future<String> initiateEmergencyOrder({
+  Future<Map<String, dynamic>> createOrder({
     required String clientUserId,
     required String category,
-    // Используем LatLng, как в новом UI
-    required LatLng clientLocation,
+    required GeoPoint location,
+    required app_order.OrderType type,
+    required app_order.OrderSource source,
+    DateTime? scheduledTime,
+    String? targetMasterId,
   }) async {
     try {
-      // Вызываем Cloud Function onNewEmergencyOrder
-      final result = await _functions.httpsCallable('onNewEmergencyOrder').call<Map<String, dynamic>>({
+      final callable = _functions.httpsCallable('createOrder');
+      final result = await callable.call({
         'clientUserId': clientUserId,
         'category': category,
-        'latitude': clientLocation.latitude,
-        'longitude': clientLocation.longitude,
+        'latitude': location.latitude,
+        'longitude': location.longitude,
+        'type': type == app_order.OrderType.emergency ? 'emergency' : 'scheduled',
+        'source': source == app_order.OrderSource.boltSearch ? 'boltSearch' : 'catalogDirect',
+        'scheduledTime': scheduledTime?.toIso8601String(),
+        'targetMasterId': targetMasterId,
       });
-
-      // Бэкенд должен вернуть ID созданного заказа
-      if (result.data != null && result.data!['orderId'] is String) {
-        return result.data!['orderId'] as String;
-      }
-      throw Exception('Cloud Function returned no order ID.');
+      return Map<String, dynamic>.from(result.data);
     } on FirebaseFunctionsException catch (e) {
       debugPrint('Cloud Function Error: ${e.code} - ${e.message}');
-      throw Exception('Ошибка запуска поиска мастера: ${e.message}');
+      throw Exception('Sifariş yaradılarkən xəta: ${e.message}');
     } catch (e) {
+      debugPrint('General Error creating order: $e');
       rethrow;
     }
   }
 
-  // Метод OrderService: createEmergencyOrder (УСТАРЕВШИЙ МЕТОД)
-  // Его функционал заменен initiateEmergencyOrder, но оставлен для совместимости.
-  Future<String> createEmergencyOrder({
-    required String customerId,
-    required String category,
-    required String problemDescription,
-    required GeoPoint clientLocation,
-  }) async {
-    final newOrderData = app_order.Order(
-      id: '',
-      customerId: customerId,
-      category: category,
-      problemDescription: problemDescription,
-      clientLocation: clientLocation,
-      createdAt: DateTime.now(),
-      status: AppConstants.orderStatusPending,
-    ).toFirestore();
-
-    final docRef = await _db.collection(_ordersCollection).add(newOrderData);
-    return docRef.id;
+  Stream<List<app_order.Order>> getClientActiveOrdersStream(String clientId) {
+    return _db.collection(_ordersCollection)
+        .where('customerId', isEqualTo: clientId)
+        .where('status', whereIn: [
+      AppConstants.orderStatusPending,
+      AppConstants.orderStatusAccepted,
+      AppConstants.orderStatusArrived,
+    ])
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+    // ✅ ИСПРАВЛЕНО: Приведение типа к Map<String, dynamic>
+        .map((doc) => app_order.Order.fromFirestore(
+        doc.data() as Map<String, dynamic>,
+        doc.id
+    ))
+        .toList());
   }
 
-  // Метод OrderService: getActiveOrderStream (Оставлен без изменений)
-  Stream<app_order.Order?> getActiveOrderStream(String orderId) {
-    return _db.collection(_ordersCollection).doc(orderId).snapshots().map((snapshot) {
-      if (snapshot.exists) {
-        return app_order.Order.fromFirestore(snapshot.data()!, snapshot.id);
-      }
-      return null;
-    });
+  Stream<List<app_order.Order>> getClientOrderHistory(String customerId) {
+    return _db.collection(_ordersCollection)
+        .where('customerId', isEqualTo: customerId)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+    // ✅ ИСПРАВЛЕНО: Приведение типа к Map<String, dynamic>
+        .map((doc) => app_order.Order.fromFirestore(
+        doc.data() as Map<String, dynamic>,
+        doc.id
+    ))
+        .toList());
   }
 
-  // Метод OrderService: clientCancelOrder (Оставлен без изменений)
   Future<void> clientCancelOrder(String orderId) async {
     await _db.collection(_ordersCollection).doc(orderId).update({
       'status': AppConstants.orderStatusCancelled,
@@ -107,85 +106,112 @@ class OrderService {
   }
 
   // --------------------------------------------------------------------------
-  // 2. ФУНКЦИОНАЛ МАСТЕРА (ОБРАБОТКА ЗАКАЗА)
+  // 2. MASTER FUNCTIONALITY
   // --------------------------------------------------------------------------
 
-  // ✅ НОВЫЙ МЕТОД (P3.4): acceptOrder
-  // Чистый wrapper для Callable Function. Используется в новом UI.
+  Stream<List<app_order.Order>> getMasterOrderHistory(String masterId, {bool isActive = false}) {
+    Query query = _db.collection(_ordersCollection).where('masterId', isEqualTo: masterId);
+
+    if (isActive) {
+      query = query.where('status', whereIn: [
+        AppConstants.orderStatusPending,
+        AppConstants.orderStatusAccepted,
+        AppConstants.orderStatusArrived
+      ]);
+    } else {
+      query = query.where('status', whereIn: [
+        AppConstants.orderStatusCompleted,
+        AppConstants.orderStatusCancelled
+      ]);
+    }
+
+    return query.orderBy('createdAt', descending: true).snapshots().map((snapshot) {
+      return snapshot.docs.map((doc) => app_order.Order.fromFirestore(
+          doc.data() as Map<String, dynamic>, // ✅ ИСПРАВЛЕНО
+          doc.id
+      )).toList();
+    });
+  }
+
   Future<void> acceptOrder({required String orderId}) async {
     try {
-      // Мастер ID берется из request.auth.uid в Cloud Function
-      await _functions.httpsCallable('acceptOrder').call(<String, dynamic>{
-        'orderId': orderId,
-      });
+      await _functions.httpsCallable('acceptOrder').call({'orderId': orderId});
     } on FirebaseFunctionsException catch (e) {
       debugPrint('Accept Order Error: ${e.code} - ${e.message}');
-      throw Exception('Ошибка принятия заказа: ${e.message}');
+      throw Exception('Sifarişi qəbul edərkən xəta: ${e.message}');
     }
   }
 
-  // ✅ masterAcceptOrder (УСТАРЕВШИЙ/НЕИСПОЛЬЗУЕМЫЙ МЕТОД - заменен acceptOrder)
-  // Оставлен только для того, чтобы показать, что его функционал теперь в acceptOrder
-  Future<Map<String, dynamic>> masterAcceptOrder({
-    required String orderId,
-  }) async {
-    try {
-      // Используем новый, чистый wrapper
-      await acceptOrder(orderId: orderId);
-      return {'success': true, 'message': 'Заказ успешно принят.'};
-    } catch (e) {
-      return {'success': false, 'message': e.toString()};
-    }
-  }
-
-  // ✅ НОВЫЙ МЕТОД (P3.5): rejectOrder
-  // Мастер отклоняет заказ (регистрирует отказ, влияет на "Тройной Отказ")
   Future<void> rejectOrder({required String orderId}) async {
     try {
-      // Master ID берется из request.auth.uid
-      await _functions.httpsCallable('rejectOrder').call({
-        'orderId': orderId,
-      });
+      await _functions.httpsCallable('rejectOrder').call({'orderId': orderId});
     } on FirebaseFunctionsException catch (e) {
       debugPrint('Reject Order Error: ${e.code} - ${e.message}');
-      throw Exception('Ошибка отклонения заказа: ${e.message}');
+      throw Exception('Sifarişdən imtina edərkən xəta: ${e.message}');
     }
   }
 
-  // ✅ НОВЫЙ МЕТОД (P3.2): registerMasterTimeout
-  // Система регистрирует таймаут (аналогично отклонению, влияет на "Тройной Отказ")
   Future<void> registerMasterTimeout({required String orderId, required String masterId}) async {
     try {
-      // NOTE: masterId здесь передается, так как вызов может быть из системы/клиента
       await _functions.httpsCallable('registerMasterTimeout').call({
         'orderId': orderId,
         'masterId': masterId,
       });
     } on FirebaseFunctionsException catch (e) {
       debugPrint('Timeout Error: ${e.code} - ${e.message}');
-      throw Exception('Ошибка регистрации таймаута: ${e.message}');
     }
   }
 
-  // Метод OrderService: masterArrived (Оставлен без изменений)
   Future<void> masterArrived(String orderId) async {
     await _db.collection(_ordersCollection).doc(orderId).update({
       'status': AppConstants.orderStatusArrived,
     });
   }
 
-  // Метод OrderService: masterCompleteOrder (Оставлен без изменений)
   Future<void> masterCompleteOrder(String orderId) async {
     await _db.collection(_ordersCollection).doc(orderId).update({
       'status': AppConstants.orderStatusCompleted,
     });
   }
 
-  // Метод OrderService: masterCancelOrder (Оставлен без изменений)
   Future<void> masterCancelOrder(String orderId) async {
-    await _db.collection(_ordersCollection).doc(orderId).update({
-      'status': AppConstants.orderStatusPending,
-      'masterId': FieldValue.delete(),
+    try {
+      await _db.collection(_ordersCollection).doc(orderId).update({
+        'status': AppConstants.orderStatusCancelled,
+      });
+    } catch (e) {
+      debugPrint('Error master canceling order: $e');
+      throw Exception('Sifarişi ləğv etmək mümkün olmadı: $e');
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // 3. COMMON / UTILS
+  // --------------------------------------------------------------------------
+
+  Stream<app_order.Order?> getActiveOrderStream(String orderId) {
+    return _db.collection(_ordersCollection).doc(orderId).snapshots().map((snapshot) {
+      if (snapshot.exists && snapshot.data() != null) {
+        // ✅ ИСПРАВЛЕНО: Приведение типа к Map<String, dynamic>
+        return app_order.Order.fromFirestore(
+            snapshot.data() as Map<String, dynamic>,
+            snapshot.id
+        );
+      }
+      return null;
     });
+  }
+
+  Future<int> generateMasterTestData() async {
+    try {
+      final result = await _functions.httpsCallable('generateTestData').call<Map<String, dynamic>>({});
+      if (result.data != null && result.data!['count'] is int) {
+        return result.data!['count'] as int;
+      }
+      return 0;
+    } catch (e) {
+      debugPrint('Generation Error: $e');
+      throw Exception('Error generating data: $e');
+    }
   }
 }

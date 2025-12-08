@@ -1,70 +1,96 @@
-// lib/managers/location_manager.dart (Обновленный код)
-
+import 'dart:async';
 import 'package:flutter/material.dart';
-import '../services/location_service.dart';
-// ✅ НОВЫЙ ИМПОРТ: Для обновления статуса в Firestore
-import 'package:bolt_usta/services/master_service.dart';
-import 'package:bolt_usta/core/app_constants.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // Для получения UID
+import 'package:geolocator/geolocator.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+// ✅ ИСПОЛЬЗУЕМ ПРЕФИКС 'gh', чтобы избежать конфликта имен GeoPoint
+import 'package:flutter_geo_hash/flutter_geo_hash.dart' as gh;
 
 class LocationManager extends ChangeNotifier {
-  final LocationService _locationService = LocationService();
-  final MasterService _masterService = MasterService(); // Новый сервис
-
-  bool _isOnline = false;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  StreamSubscription<Position>? _positionStreamSubscription;
+  Position? _currentPosition;
   String? _masterId;
+  bool _isTracking = false;
 
-  bool get isOnline => _isOnline;
+  // Геттер для получения текущей позиции
+  Position? get currentPosition => _currentPosition;
 
-  // Инициализация
-  LocationManager() {
-    _masterId = FirebaseAuth.instance.currentUser?.uid;
+  // Инициализация менеджера
+  Future<void> init(String masterId) async {
+    _masterId = masterId;
+    await _checkPermissions();
   }
 
-  // ✅ МОДИФИКАЦИЯ: Добавляем целевое значение статуса (для MasterDashboardScreen)
-  Future<void> toggleOnlineStatus([bool? targetStatus]) async {
-    if (_masterId == null) {
-      // Невозможно изменить статус, если пользователь не аутентифицирован
-      print('LocationManager Error: Master ID is null.');
-      return;
-    }
+  // Запуск отслеживания
+  void startTracking() {
+    if (_isTracking) return;
+    _isTracking = true;
 
-    final bool newStatus = targetStatus ?? !_isOnline;
+    const LocationSettings locationSettings = LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 50, // Обновлять каждые 50 метров
+    );
 
-    if (newStatus) {
-      // 1. Переход в ОНЛАЙН (FREE)
-      try {
-        await _locationService.startLocationUpdates();
-        await _masterService.toggleMasterStatus(_masterId!, true); // Обновляем Firestore на 'free'
-        _isOnline = true;
-        print('LocationManager: Switched to ONLINE (FREE).');
-      } catch (e) {
-        print('LocationManager Error: Failed to start location service: $e');
-        _isOnline = false; // Откат
-        // Если не удалось, статус в Firestore остается неизменным
-      }
-    } else {
-      // 2. Переход в ОФФЛАЙН (BUSY)
-      await _locationService.stopLocationUpdates();
-      await _masterService.toggleMasterStatus(_masterId!, false); // Обновляем Firestore на 'busy'
-      _isOnline = false;
-      print('LocationManager: Switched to OFFLINE (BUSY).');
-    }
+    _positionStreamSubscription = Geolocator.getPositionStream(locationSettings: locationSettings)
+        .listen((Position position) {
+      _currentPosition = position;
+      _updateLocationInFirestore(position);
+      notifyListeners(); // Уведомляем UI об изменении позиции
+    });
+  }
 
+  // Остановка отслеживания
+  void stopTracking() {
+    _positionStreamSubscription?.cancel();
+    _isTracking = false;
+    _currentPosition = null;
     notifyListeners();
   }
 
-  Future<void> stopOnlineServiceOnSignOut() async {
-    if (_isOnline) {
-      // Остановка GPS сервиса
-      await _locationService.stopLocationUpdates();
-      // Установка статуса в Firestore как 'busy' перед выходом
-      if (_masterId != null) {
-        await _masterService.toggleMasterStatus(_masterId!, false);
-      }
-      _isOnline = false;
-      notifyListeners();
-      print('LocationManager: Location service stopped before sign out.');
+  // Обновление локации в Firestore
+  Future<void> _updateLocationInFirestore(Position position) async {
+    if (_masterId == null) return;
+
+    // ✅ ИСПОЛЬЗУЕМ gh.GeoPoint для генерации хеша
+    final geoHash = gh.MyGeoHash().geoHashForLocation(gh.GeoPoint(position.latitude, position.longitude));
+
+    try {
+      await _firestore.collection('users').doc(_masterId).update({
+        // ✅ ИСПОЛЬЗУЕМ ОБЫЧНЫЙ GeoPoint (из cloud_firestore) для сохранения в базу
+        'lastLocation': GeoPoint(position.latitude, position.longitude),
+        'geoHash': geoHash,
+        'lastActive': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print("Error updating location: $e");
     }
+  }
+
+  Future<void> _checkPermissions() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return Future.error('Location services are disabled.');
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        return Future.error('Location permissions are denied');
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      return Future.error('Location permissions are permanently denied.');
+    }
+  }
+
+  @override
+  void dispose() {
+    stopTracking();
+    super.dispose();
   }
 }

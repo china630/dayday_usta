@@ -1,10 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:bolt_usta/models/review.dart'; // Предполагаем, что модель Review существует
+import 'package:bolt_usta/models/review.dart';
 
 class ReviewService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final String _reviewsCollection = 'reviews';
-  final String _usersCollection = 'users'; // Для доступа к профилям мастеров
+  final String _usersCollection = 'users';
 
   // --------------------------------------------------------------------------
   // 1. ОТПРАВКА ОТЗЫВА (Rəy Bildir)
@@ -32,7 +32,6 @@ class ReviewService {
     // 1. Сохранение нового документа в коллекции Reviews
     await _db.collection(_reviewsCollection).add(newReview.toFirestore());
 
-    // В этот момент должен сработать Cloud Function 'updateMasterAverageRating()'
     print('Отзыв успешно сохранен. Cloud Function запустит пересчет рейтинга для Мастера $masterId.');
   }
 
@@ -40,16 +39,15 @@ class ReviewService {
   // 2. ПОЛУЧЕНИЕ ОТЗЫВОВ
   // --------------------------------------------------------------------------
 
-  // Метод ReviewService: getMasterReviewsStream
-  // Получает поток отзывов для отображения на экране 'Usta Profili'
-  Stream<List<Review>> getMasterReviewsStream(String masterId) {
+  // ✅ ИСПРАВЛЕНО: Переименовали метод в getReviewsForMaster, как требуется в UI
+  Stream<List<Review>> getReviewsForMaster(String masterId) {
     return _db.collection(_reviewsCollection)
         .where('masterId', isEqualTo: masterId)
         .orderBy('date', descending: true)
         .snapshots()
         .map((snapshot) {
       return snapshot.docs
-          .map((doc) => Review.fromFirestore(doc.data() as Map<String, dynamic>, doc.id))
+          .map((doc) => Review.fromFirestore(doc.data(), doc.id))
           .toList();
     });
   }

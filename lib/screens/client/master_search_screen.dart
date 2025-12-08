@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:bolt_usta/core/app_constants.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:bolt_usta/core/app_colors.dart';
 import 'package:bolt_usta/models/master_profile.dart';
 import 'package:bolt_usta/services/master_service.dart';
-// import 'package:bolt_usta/screens/client/master_profile_screen.dart';
+import 'package:bolt_usta/services/metadata_service.dart';
+import 'package:bolt_usta/screens/client/master_profile_screen.dart';
 
 class MasterSearchScreen extends StatefulWidget {
   const MasterSearchScreen({super.key});
@@ -13,129 +15,159 @@ class MasterSearchScreen extends StatefulWidget {
 
 class _MasterSearchScreenState extends State<MasterSearchScreen> {
   final MasterService _masterService = MasterService();
+  final MetadataService _metadataService = MetadataService();
 
-  // Параметры фильтрации
-  String? _selectedCategory; // Kateqoriya (Имя/ID)
-  String? _selectedDistrict; // Rayon (Имя/ID)
-  bool _onlyAvailable = false; // Status (Mövcud/Mövcud Deyil)
+  List<MasterProfile> _masters = [];
+  bool _isLoading = true;
 
-  // Список мастеров, который будет отображаться
-  Future<List<MasterProfile>>? _mastersFuture;
+  List<String> _categories = [];
+  List<String> _districts = [];
+  bool _isMetadataLoading = true;
+
+  String? _selectedCategory;
+  String? _selectedDistrict;
+  bool _onlyFree = false;
 
   @override
   void initState() {
     super.initState();
-    _searchMasters(); // Запускаем первоначальный поиск при инициализации
+    _initData();
   }
 
-  // Метод MasterService: searchMasters
-  void _searchMasters() {
-    setState(() {
-      // ❗️ ИСПРАВЛЕНИЕ: Передаем аргументы как categoryId и districtId
-      _mastersFuture = _masterService.searchMasters(
-        categoryId: _selectedCategory, // NOTE: Предполагаем, что _selectedCategory хранит ID
-        districtId: _selectedDistrict, // NOTE: Предполагаем, что _selectedDistrict хранит ID
-        onlyFree: _onlyAvailable,
+  Future<void> _initData() async {
+    try {
+      final results = await Future.wait([
+        _metadataService.getCategories(),
+        _metadataService.getDistricts(),
+      ]);
+
+      if (mounted) {
+        setState(() {
+          _categories = results[0];
+          _districts = results[1];
+          _isMetadataLoading = false;
+        });
+      }
+
+      _loadMasters();
+    } catch (e) {
+      debugPrint("Init error: $e");
+      if (mounted) setState(() => _isMetadataLoading = false);
+    }
+  }
+
+  Future<void> _loadMasters() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final results = await _masterService.searchMasters(
+        categoryId: _selectedCategory,
+        districtId: _selectedDistrict,
+        onlyFree: _onlyFree,
       );
-    });
-  }
 
-  // Сброс фильтров
-  void _resetFilters() {
-    setState(() {
-      _selectedCategory = null;
-      _selectedDistrict = null;
-      _onlyAvailable = false;
-    });
-    _searchMasters();
+      if (mounted) {
+        setState(() {
+          _masters = results;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Search error: $e");
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Usta Axtar', style: TextStyle(fontWeight: FontWeight.bold)), // Искать Мастера
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _resetFilters,
-            tooltip: 'Filtrləri Sıfırla (Сбросить фильтры)',
-          ),
-        ],
+        // ✅ ОБНОВЛЕНО: Мятный фон, белый текст
+        title: const Text("Usta Kataloqu", style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: kPrimaryColor,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: true,
       ),
+      backgroundColor: kBackgroundColor,
       body: Column(
         children: [
-          // -----------------------------------------------------------
-          // 1. Секция Фильтров (Rayon, Kateqoriya, Status)
-          // -----------------------------------------------------------
-          Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Column(
+          // Блок фильтров
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
+            ),
+            child: _isMetadataLoading
+                ? const LinearProgressIndicator(color: kPrimaryColor)
+                : Column(
               children: [
-                // Категория и Район в одной строке
-                Row(
-                  children: [
-                    Expanded(child: _buildDropdownFilter('Kateqoriya', AppConstants.serviceCategories, _selectedCategory, (v) => setState(() => _selectedCategory = v))),
-                    const SizedBox(width: 8),
-                    Expanded(child: _buildDropdownFilter('Rayon', AppConstants.districts, _selectedDistrict, (v) => setState(() => _selectedDistrict = v))),
-                  ],
-                ),
-                const SizedBox(height: 8),
-
-                // Фильтр Статуса и Кнопка Поиска
                 Row(
                   children: [
                     Expanded(
-                      child: CheckboxListTile(
-                        title: const Text('Mövcud (Свободен)'), // Статус: Свободен
-                        value: _onlyAvailable,
-                        dense: true,
-                        onChanged: (bool? v) {
-                          setState(() => _onlyAvailable = v ?? false);
-                        },
+                      child: _buildDropdown(
+                          "Xidmət",
+                          _selectedCategory,
+                          _categories,
+                              (val) {
+                            setState(() => _selectedCategory = val);
+                            _loadMasters();
+                          }
                       ),
                     ),
-                    ElevatedButton.icon(
-                      onPressed: _searchMasters,
-                      icon: const Icon(Icons.search),
-                      label: const Text('Axtar'), // Поиск
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _buildDropdown(
+                          "Rayon",
+                          _selectedDistrict,
+                          _districts,
+                              (val) {
+                            setState(() => _selectedDistrict = val);
+                            _loadMasters();
+                          }
                       ),
                     ),
                   ],
                 ),
+                const SizedBox(height: 10),
+                SwitchListTile(
+                  title: const Text("Yalnız boş ustalar", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                  value: _onlyFree,
+                  activeColor: kPrimaryColor,
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  onChanged: (val) {
+                    setState(() => _onlyFree = val);
+                    _loadMasters();
+                  },
+                )
               ],
             ),
           ),
 
-          const Divider(),
-
-          // -----------------------------------------------------------
-          // 2. Секция "Ustalar" (Список Мастеров)
-          // -----------------------------------------------------------
+          // Список мастеров
           Expanded(
-            child: FutureBuilder<List<MasterProfile>>(
-              future: _mastersFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return Center(child: Text('Xəta baş verdi: ${snapshot.error}')); // Ошибка
-                }
-                if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  return const Center(child: Text('Bu filtrlərlə usta tapılmadı.')); // Мастера не найдены
-                }
-
-                final masters = snapshot.data!;
-                return ListView.builder(
-                  itemCount: masters.length,
-                  itemBuilder: (context, index) {
-                    final master = masters[index];
-                    return _buildMasterListItem(context, master);
-                  },
-                );
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _masters.isEmpty
+                ? Center(child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.search_off, size: 60, color: Colors.grey[300]),
+                const SizedBox(height: 10),
+                const Text("Bu kriteriyalara uyğun usta tapılmadı", style: TextStyle(color: Colors.grey)),
+              ],
+            ))
+                : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _masters.length,
+              itemBuilder: (context, index) {
+                final master = _masters[index];
+                return _buildMasterCard(master, currentUserId);
               },
             ),
           ),
@@ -144,62 +176,96 @@ class _MasterSearchScreenState extends State<MasterSearchScreen> {
     );
   }
 
-  // Вспомогательный виджет для Dropdown-фильтра
-  Widget _buildDropdownFilter(String label, List<String> items, String? currentValue, Function(String?) onChanged) {
-    return DropdownButtonFormField<String>(
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+  Widget _buildDropdown(String hint, String? value, List<String> items, Function(String?) onChanged) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(12),
       ),
-      value: currentValue,
-      hint: Text(label),
-      items: items.map((String value) {
-        return DropdownMenuItem<String>(
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
           value: value,
-          child: Text(value, overflow: TextOverflow.ellipsis),
-        );
-      }).toList(),
-      onChanged: onChanged,
+          hint: Text(hint, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+          isExpanded: true,
+          icon: const Icon(Icons.keyboard_arrow_down, size: 20),
+          items: [
+            const DropdownMenuItem(value: null, child: Text("Hamısı", style: TextStyle(fontWeight: FontWeight.bold))),
+            ...items.map((e) => DropdownMenuItem(value: e, child: Text(e, overflow: TextOverflow.ellipsis))),
+          ],
+          onChanged: onChanged,
+        ),
+      ),
     );
   }
 
-  // Вспомогательный виджет для элемента списка Мастеров
-  Widget _buildMasterListItem(BuildContext context, MasterProfile master) {
-    // Используем заглушку для фотографии
-    const placeholderImage = CircleAvatar(
-      radius: 30,
-      backgroundColor: Colors.grey,
-      child: Icon(Icons.person, color: Colors.white),
-    );
-
+  Widget _buildMasterCard(MasterProfile master, String currentUserId) {
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      elevation: 2,
-      child: ListTile(
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 0,
+      color: Colors.white,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
         onTap: () {
-          // При нажатии переходит на экран “Usta Profili”
-          // Navigator.push(context, MaterialPageRoute(builder: (_) => MasterProfileScreen(masterId: master.uid, currentUserId: master.uid)));
-          print('Переход на Usta Profili для: ${master.fullName}');
-        },
-        leading: placeholderImage, // Фото
-        title: Text(master.fullName ?? 'Usta Adı', style: const TextStyle(fontWeight: FontWeight.w600)), // Ustanın Adı
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Kateqoriya: ${master.categories.join(', ')}'), // Kateqoriya
-            Row(
-              children: [
-                const Icon(Icons.star, color: Colors.amber, size: 16),
-                const SizedBox(width: 4),
-                Text('Reytinq: ${master.rating.toStringAsFixed(1)}'), // Reytinq
-              ],
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => MasterProfileScreen(
+                masterId: master.uid,
+                currentUserId: currentUserId,
+              ),
             ),
-          ],
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 30,
+                backgroundColor: kBackgroundColor,
+                child: const Icon(Icons.person, size: 30, color: Colors.grey),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(master.fullName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: kDarkColor)),
+                    const SizedBox(height: 4),
+                    Text(master.categories.join(", "), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.star, size: 16, color: Colors.amber),
+                        Text(" ${master.rating.toStringAsFixed(1)}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        const SizedBox(width: 12),
+                        Container(
+                          width: 8, height: 8,
+                          decoration: BoxDecoration(
+                            color: master.status == 'free' ? kPrimaryColor : Colors.grey,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          master.status == 'free' ? "Boşdur" : "Məşğuldur",
+                          style: TextStyle(
+                              color: master.status == 'free' ? kPrimaryColor : Colors.grey,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12
+                          ),
+                        ),
+                      ],
+                    )
+                  ],
+                ),
+              ),
+              const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+            ],
+          ),
         ),
-        trailing: master.verificationStatus == AppConstants.verificationVerified
-            ? const Icon(Icons.verified, color: Colors.blue)
-            : null,
       ),
     );
   }

@@ -1,9 +1,9 @@
-// lib/screens/client/client_main_shell.dart
-
 import 'package:flutter/material.dart';
-import 'package:bolt_usta/services/auth_service.dart';
-import 'package:bolt_usta/screens/map_screen.dart'; // Карта/Bolt
-import 'package:bolt_usta/screens/client/master_search_screen.dart'; // Справочник Мастеров
+import 'package:bolt_usta/core/app_colors.dart'; // ✅ Цвета
+import 'package:bolt_usta/screens/map_screen.dart';
+import 'package:bolt_usta/screens/client/master_search_screen.dart';
+import 'package:bolt_usta/screens/client/client_order_history_screen.dart';
+import 'package:bolt_usta/screens/client/client_profile_screen.dart';
 
 class ClientMainShell extends StatefulWidget {
   final String currentUserId;
@@ -15,89 +15,78 @@ class ClientMainShell extends StatefulWidget {
 }
 
 class _ClientMainShellState extends State<ClientMainShell> {
-  int _selectedIndex = 0;
-  final AuthService _authService = AuthService();
+  int _currentIndex = 0;
 
-  // Список экранов для BottomNavigationBar
-  late final List<Widget> _widgetOptions;
+  late final List<Widget> _screens;
 
   @override
   void initState() {
     super.initState();
-    _widgetOptions = <Widget>[
-      // 0: Срочный Вызов (Карта) - Без AppBar, как вы просили.
+    _screens = [
       MapScreen(currentUserId: widget.currentUserId),
-      // 1: Справочник Мастеров (Каталог)
       const MasterSearchScreen(),
-      // 2: Заглушка для Профиля
-      Center(child: Text('Профиль Пользователя ID: ${widget.currentUserId}')),
+      ClientOrderHistoryScreen(customerId: widget.currentUserId),
+      ClientProfileScreen(currentUserId: widget.currentUserId),
     ];
   }
 
-  void _onItemTapped(int index) {
-    // Если нажат пункт "Профиль/Выход" (index 2), показываем диалог выхода
-    if (index == 2) {
-      _showLogoutDialog(context);
-    } else {
-      setState(() {
-        _selectedIndex = index;
-      });
-    }
-  }
-
-  void _showLogoutDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Выход'),
-          content: const Text('Вы уверены, что хотите выйти из аккаунта?'),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Отмена'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-            TextButton(
-              child: const Text('Выйти', style: TextStyle(color: Colors.red)),
-              onPressed: () async {
-                Navigator.of(context).pop();
-                await _authService.signOut();
-              },
-            ),
-          ],
-        );
-      },
-    );
+  void _onTabTapped(int index) {
+    setState(() {
+      _currentIndex = index;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Главный контейнер (Shell) без своего AppBar
-      body: Center(
-        child: _widgetOptions.elementAt(_selectedIndex),
+      body: IndexedStack(
+        index: _currentIndex,
+        children: _screens,
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.location_on),
-            label: 'Bolt/Xəritə',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.search),
-            label: 'Usta Axtarışı',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profil/Çıxış',
-          ),
-        ],
-        currentIndex: _selectedIndex,
-        // Стиль для активной кнопки
-        selectedItemColor: Colors.blue.shade700,
-        onTap: _onItemTapped,
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: BottomNavigationBar(
+          currentIndex: _currentIndex,
+          onTap: _onTabTapped,
+          backgroundColor: Colors.white,
+          selectedItemColor: kPrimaryColor, // ✅ Мятный для активной
+          unselectedItemColor: Colors.grey[400],
+          type: BottomNavigationBarType.fixed,
+          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 12),
+          elevation: 0, // Тень мы задали контейнером выше
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.location_on_outlined),
+              activeIcon: Icon(Icons.location_on),
+              label: 'Axtar',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.grid_view_outlined),
+              activeIcon: Icon(Icons.grid_view_rounded),
+              label: 'Kataloq',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.receipt_long_outlined),
+              activeIcon: Icon(Icons.receipt_long),
+              label: 'Sifarişlər',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person_outline),
+              activeIcon: Icon(Icons.person),
+              label: 'Profil',
+            ),
+          ],
+        ),
       ),
     );
   }

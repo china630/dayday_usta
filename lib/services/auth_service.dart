@@ -1,141 +1,93 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:bolt_usta/core/app_constants.dart';
 import 'package:bolt_usta/models/user_profile.dart';
 import 'package:bolt_usta/models/master_profile.dart';
+import 'package:bolt_usta/core/app_constants.dart';
+import 'package:bolt_usta/services/user_profile_service.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final String _usersCollection = 'users';
+  final UserProfileService _userProfileService = UserProfileService();
 
-  // Stream для отслеживания состояния аутентификации
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
-  // Получение текущего аутентифицированного пользователя
   User? getCurrentUser() {
     return _auth.currentUser;
   }
 
-  // --------------------------------------------------------------------------
-  // 1. УПРАВЛЕНИЕ ПРОФИЛЕМ В FIRESTORE
-  // --------------------------------------------------------------------------
-
-  // Получение профиля пользователя из Firestore
-  Future<UserProfile?> getCurrentUserProfile() async {
-    final user = getCurrentUser();
-    if (user == null) {
-      return null;
-    }
-
-    try {
-      final doc = await _db.collection(_usersCollection).doc(user.uid).get();
-
-      if (doc.exists) {
-        final data = doc.data()!;
-
-        // 1. ПРОВЕРКА РОЛИ (для входа Администратора)
-        // Если роль уже установлена в Firestore, мы считаем профиль полным.
-        final role = data['role'] as String?;
-
-        if (role != null) {
-          if (role == AppConstants.dbRoleMaster) {
-            return MasterProfile.fromFirestore(data);
-          } else {
-            // Возвращаем базовый профиль для клиента/админа
-            return UserProfile.fromFirestore(data);
-          }
-        }
-
-        // Если роль не установлена, или отсутствуют другие критические поля,
-        // то возвращаем null, что направит на RoleSelectionScreen.
-        return null;
-
-      }
-      return null;
-    } catch (e) {
-      print('Error fetching user profile: $e');
-      return null;
-    }
+  Future<void> signOut() async {
+    await _auth.signOut();
   }
 
-  // Создание нового профиля в Firestore (Customer или Master)
-  Future<void> createNewProfile({
+  Future<UserProfile?> getCurrentUserProfile() async {
+    final user = _auth.currentUser;
+    if (user != null) {
+      return await _userProfileService.getUserProfile(user.uid);
+    }
+    return null;
+  }
+
+  // Регистрация Клиента
+  Future<void> registerClient({
     required String uid,
     required String phoneNumber,
-    required String role,
     required String name,
     required String surname,
   }) async {
-    final String fullName = '$name $surname'.trim();
-
-    if (role == AppConstants.dbRoleCustomer) {
-
-      final userProfile = UserProfile(
-        uid: uid,
-        phoneNumber: phoneNumber,
-        role: role,
-        createdAt: DateTime.now(),
-        name: name,
-        surname: surname,
-      );
-
-      await _db.collection(_usersCollection).doc(uid).set(userProfile.toFirestore());
-
-    } else if (role == AppConstants.dbRoleMaster) {
-
-      final masterProfile = MasterProfile(
-        uid: uid,
-        phoneNumber: phoneNumber,
-        createdAt: DateTime.now(),
-        name: name,
-        surname: surname,
-        rating: 0.0,
-        callsCount: 0,
-        viewsCount: 0,
-        status: AppConstants.masterStatusBusy, // 'busy' по умолчанию
-        verificationStatus: AppConstants.verificationPending, // 'pending'
-        categories: [],
-        districts: [],
-      );
-
-      await _db.collection(_usersCollection).doc(uid).set(masterProfile.toFirestore());
-
-    } else {
-      throw Exception('Invalid role specified: $role');
-    }
-  }
-
-  // --------------------------------------------------------------------------
-  // 2. АУТЕНТИФИКАЦИЯ (РЕАЛЬНАЯ РЕАЛИЗАЦИЯ)
-  // --------------------------------------------------------------------------
-
-  // ✅ РЕАЛИЗОВАННЫЙ МЕТОД: verifyPhoneNumber
-  Future<void> verifyPhoneNumber(
-      String phoneNumber,
-      Function(PhoneAuthCredential) verificationCompleted,
-      Function(FirebaseAuthException) verificationFailed,
-      Function(String, int?) codeSent,
-      Function(String) codeAutoRetrievalTimeout
-      ) async {
-
-    // ❗️ УБРАН print() - ДОБАВЛЕН РЕАЛЬНЫЙ ВЫЗОВ
-    await _auth.verifyPhoneNumber(
+    final userProfile = UserProfile(
+      uid: uid,
       phoneNumber: phoneNumber,
-      verificationCompleted: verificationCompleted,
-      verificationFailed: verificationFailed,
-      codeSent: codeSent,
-      codeAutoRetrievalTimeout: codeAutoRetrievalTimeout,
+      role: 'client',
+      createdAt: DateTime.now(),
+      name: name,
+      surname: surname,
     );
+
+    await _db.collection('users').doc(uid).set(userProfile.toFirestore());
   }
 
-  // РЕАЛИЗОВАННЫЙ МЕТОД: signInWithCredential
-  Future<UserCredential> signInWithCredential(PhoneAuthCredential credential) async {
-    return await _auth.signInWithCredential(credential);
-  }
+  // Регистрация Мастера
+  Future<void> registerMaster({
+    required String uid,
+    required String phoneNumber,
+    required String name,
+    required String surname,
+    required List<String> categories,
+    required List<String> districts,
+  }) async {
+    // ✅ ИСПРАВЛЕНО: Добавлен параметр 'role'
+    final masterProfile = MasterProfile(
+      uid: uid,
+      phoneNumber: phoneNumber,
+      role: 'master', // <--- ВОТ ЗДЕСЬ ИСПРАВЛЕНИЕ
+      createdAt: DateTime.now(),
+      name: name,
+      surname: surname,
+      categories: categories,
+      districts: districts,
+      status: AppConstants.masterStatusUnavailable, // Изначально недоступен
+      verificationStatus: AppConstants.verificationPending, // Ждет верификации
+    );
 
-  // Выход из системы
-  Future<void> signOut() async {
-    await _auth.signOut();
+    // Сохраняем профиль
+    await _db.collection('users').doc(uid).set(masterProfile.toFirestore());
+
+    // Обновляем фильтры поиска (3NF)
+    // Внимание: Этот код дублируется в MasterService, лучше бы вынести, но пока оставим здесь
+    final batch = _db.batch();
+
+    // Категории
+    for (var cat in categories) {
+      final docRef = _db.collection('master_filters').doc();
+      batch.set(docRef, {'masterId': uid, 'categoryId': cat});
+    }
+    // Районы
+    for (var dist in districts) {
+      final docRef = _db.collection('master_filters').doc();
+      batch.set(docRef, {'masterId': uid, 'districtId': dist});
+    }
+
+    await batch.commit();
   }
 }

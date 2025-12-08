@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:bolt_usta/core/app_constants.dart';
+import 'package:bolt_usta/core/app_colors.dart'; // ✅ Добавлены ваши цвета
 import 'package:bolt_usta/services/auth_service.dart';
-// !!! ИСПРАВЛЕНИЕ: Импортируем сам класс Wrapper, который находится в main.dart
 import 'package:bolt_usta/main.dart';
 
 class RoleSelectionScreen extends StatefulWidget {
@@ -38,26 +38,36 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
     try {
-      // 1. Создание нового профиля в Firestore
-      await _authService.createNewProfile(
-        uid: widget.firebaseUser.uid,
-        phoneNumber: widget.firebaseUser.phoneNumber!,
-        role: _selectedRole!,
-        name: name,
-        surname: surname,
-      );
+      // ✅ ИСПРАВЛЕНИЕ: Вызов новых методов вместо createNewProfile
 
-      // 2. ✅ ИСПРАВЛЕНИЕ: После успешной регистрации возвращаемся к корню (Wrapper),
-      // который выполнит автоматический роутинг по роли.
+      if (_selectedRole == AppConstants.dbRoleCustomer) {
+        // Регистрация КЛИЕНТА
+        await _authService.registerClient(
+          uid: widget.firebaseUser.uid,
+          phoneNumber: widget.firebaseUser.phoneNumber ?? '',
+          name: name,
+          surname: surname,
+        );
+      } else if (_selectedRole == AppConstants.dbRoleMaster) {
+        // Регистрация МАСТЕРА
+        await _authService.registerMaster(
+          uid: widget.firebaseUser.uid,
+          phoneNumber: widget.firebaseUser.phoneNumber ?? '',
+          name: name,
+          surname: surname,
+          categories: [], // Пустые списки, заполнит в профиле
+          districts: [],
+        );
+      } else {
+        throw Exception("Unknown role selected");
+      }
+
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
-          // MaterialPageRoute(builder: (context) => MainScreenRouting()), // ❌ Старый, нерабочий код
-          MaterialPageRoute(builder: (context) => const Wrapper()), // ✅ Новый рабочий код
+          MaterialPageRoute(builder: (context) => const Wrapper()),
               (Route<dynamic> route) => false,
         );
       }
@@ -69,75 +79,85 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
         );
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Rol Seçimi', style: TextStyle(fontWeight: FontWeight.bold)), // Выбор Роли
+        title: const Text('Kimsiniz?', style: TextStyle(fontWeight: FontWeight.bold, color: kDarkColor)),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: true,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20.0),
+        padding: const EdgeInsets.all(24.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Xoş gəlmisiniz! Zəhmət olmasa, rolunuzu seçin və ilkin məlumatları daxil edin.',
-              style: TextStyle(fontSize: 16),
-            ),
-            const SizedBox(height: 20),
-
-            // Выбор Роли
-            Row(
-              children: [
-                _buildRoleButton(AppConstants.dbRoleCustomer, AppConstants.uiRoleCustomer), // Müştəri
-                _buildRoleButton(AppConstants.dbRoleMaster, AppConstants.uiRoleMaster), // Usta
-              ],
-            ),
-            const SizedBox(height: 20),
-
-            // Поле ввода для Имени
-            TextFormField(
-              controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: 'Ad (Имя)', // Имя
-                hintText: 'Məsələn: Əli',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.name,
-            ),
-            const SizedBox(height: 15),
-
-            // Поле ввода для Фамилии
-            TextFormField(
-              controller: _surnameController,
-              decoration: const InputDecoration(
-                labelText: 'Soyad (Фамилия)', // Фамилия
-                hintText: 'Məsələn: Əliyev',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.name,
+              'Xoş gəlmisiniz! Zəhmət olmasa, rolunuzu seçin və məlumatları tamamlayın.',
+              style: TextStyle(fontSize: 16, color: Colors.grey),
             ),
             const SizedBox(height: 30),
 
-            // Кнопка завершения регистрации
+            // Выбор Роли (Кнопки)
+            Row(
+              children: [
+                _buildRoleButton(AppConstants.dbRoleCustomer, AppConstants.uiRoleCustomer, Icons.person),
+                const SizedBox(width: 15),
+                _buildRoleButton(AppConstants.dbRoleMaster, AppConstants.uiRoleMaster, Icons.build),
+              ],
+            ),
+            const SizedBox(height: 30),
+
+            // Поле ввода для Имени
+            const Text("Adınız", style: TextStyle(fontWeight: FontWeight.bold, color: kDarkColor)),
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _nameController,
+              decoration: InputDecoration(
+                hintText: 'Məsələn: Əli',
+                filled: true,
+                fillColor: Colors.grey[50],
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              ),
+              keyboardType: TextInputType.name,
+            ),
+            const SizedBox(height: 20),
+
+            // Поле ввода для Фамилии
+            const Text("Soyadınız", style: TextStyle(fontWeight: FontWeight.bold, color: kDarkColor)),
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _surnameController,
+              decoration: InputDecoration(
+                hintText: 'Məsələn: Əliyev',
+                filled: true,
+                fillColor: Colors.grey[50],
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              ),
+              keyboardType: TextInputType.name,
+            ),
+            const SizedBox(height: 40),
+
+            // Кнопка завершения
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: _isLoading ? null : _completeRegistration,
                 style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 15),
+                  backgroundColor: kPrimaryColor,
+                  disabledBackgroundColor: Colors.grey[300],
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 child: _isLoading
-                    ? const CircularProgressIndicator()
-                    : const Text('Qeydiyyatı Tamamla', style: TextStyle(fontSize: 16)), // Завершить Регистрацию
+                    ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text('DAXİL OL', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
               ),
             ),
           ],
@@ -146,26 +166,35 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     );
   }
 
-  Widget _buildRoleButton(String role, String title) {
+  Widget _buildRoleButton(String role, String title, IconData icon) {
     final isSelected = _selectedRole == role;
     return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8.0),
-        child: OutlinedButton(
-          onPressed: () {
-            setState(() {
-              _selectedRole = role;
-            });
-          },
-          style: OutlinedButton.styleFrom(
-            backgroundColor: isSelected ? Colors.blue.shade50 : Colors.white,
-            side: BorderSide(color: isSelected ? Colors.blue : Colors.grey),
-            padding: const EdgeInsets.symmetric(vertical: 20),
+      child: GestureDetector(
+        onTap: () => setState(() => _selectedRole = role),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          decoration: BoxDecoration(
+            color: isSelected ? kPrimaryColor.withOpacity(0.1) : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isSelected ? kPrimaryColor : Colors.grey.shade300,
+              width: 2,
+            ),
           ),
-          child: Text(title, style: TextStyle(
-            color: isSelected ? Colors.blue : Colors.black,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-          )),
+          child: Column(
+            children: [
+              Icon(icon, size: 30, color: isSelected ? kPrimaryColor : Colors.grey),
+              const SizedBox(height: 10),
+              Text(
+                title,
+                style: TextStyle(
+                  color: isSelected ? kPrimaryColor : kDarkColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
