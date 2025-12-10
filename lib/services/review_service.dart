@@ -1,54 +1,47 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:bolt_usta/models/review.dart';
+import 'package:bolt_usta/models/review.dart'; // ✅ Импортируем модель
 
 class ReviewService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final String _reviewsCollection = 'reviews';
-  final String _usersCollection = 'users';
 
-  // --------------------------------------------------------------------------
-  // 1. ОТПРАВКА ОТЗЫВА (Rəy Bildir)
-  // --------------------------------------------------------------------------
-
-  // Метод ReviewService: submitReview
-  // Сохраняет новый отзыв в коллекции Reviews
+  // Отправка отзыва
   Future<void> submitReview({
     required String orderId,
-    required String customerId,
     required String masterId,
-    required int rating, // Оценка звездами (1-5)
-    required String reviewText,
+    required String customerId,
+    required double rating,
+    required String comment,
   }) async {
-    final newReview = Review(
-      id: '', // ID будет присвоен Firestore
-      orderId: orderId,
-      customerId: customerId,
-      masterId: masterId,
-      rating: rating,
-      reviewText: reviewText,
-      date: DateTime.now(),
-    );
+    try {
+      await _db.collection('reviews').add({
+        'orderId': orderId,
+        'masterId': masterId,
+        'customerId': customerId,
+        'rating': rating,
+        'reviewText': comment, // В базе поле называется reviewText
+        'date': FieldValue.serverTimestamp(),
+      });
 
-    // 1. Сохранение нового документа в коллекции Reviews
-    await _db.collection(_reviewsCollection).add(newReview.toFirestore());
+      // Помечаем заказ как оцененный
+      await _db.collection('orders').doc(orderId).update({
+        'isReviewed': true,
+      });
 
-    print('Отзыв успешно сохранен. Cloud Function запустит пересчет рейтинга для Мастера $masterId.');
+    } catch (e) {
+      print('Error submitting review: $e');
+      throw e;
+    }
   }
 
-  // --------------------------------------------------------------------------
-  // 2. ПОЛУЧЕНИЕ ОТЗЫВОВ
-  // --------------------------------------------------------------------------
-
-  // ✅ ИСПРАВЛЕНО: Переименовали метод в getReviewsForMaster, как требуется в UI
+  // Получение отзывов мастера
   Stream<List<Review>> getReviewsForMaster(String masterId) {
-    return _db.collection(_reviewsCollection)
+    return _db
+        .collection('reviews')
         .where('masterId', isEqualTo: masterId)
         .orderBy('date', descending: true)
         .snapshots()
-        .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => Review.fromFirestore(doc.data(), doc.id))
-          .toList();
-    });
+        .map((snapshot) => snapshot.docs
+        .map((doc) => Review.fromFirestore(doc))
+        .toList());
   }
 }

@@ -12,10 +12,12 @@ class MasterService {
   Future<void> toggleMasterStatus(String masterId, bool isAvailable) async {
     final newStatus = isAvailable
         ? AppConstants.masterStatusFree
-        : AppConstants.masterStatusBusy;
+        : AppConstants.masterStatusUnavailable;
 
+    // ✅ ИСПРАВЛЕНИЕ: Обновляем и 'status', и 'isOnline', чтобы в базе был порядок
     await _db.collection(_usersCollection).doc(masterId).update({
       'status': newStatus,
+      'isOnline': isAvailable,
     });
   }
 
@@ -29,7 +31,7 @@ class MasterService {
   Future<void> updateMasterSearchFilters(String masterId, List<String> categoryIds, List<String> districtIds) async {
     await _db.collection(_usersCollection).doc(masterId).update({
       'categories': categoryIds,
-      'districts': districtIds, // ✅ В базе поле называется districts
+      'districts': districtIds,
     });
   }
 
@@ -103,8 +105,7 @@ class MasterService {
 
       if (districtId != null && districtId.isNotEmpty) {
         masters = masters.where((m) =>
-        // ✅ ИСПРАВЛЕНО: Используем 'districts', так как это имя поля в модели и базе
-        m.districts.contains(districtId)
+            m.districts.contains(districtId)
         ).toList();
       }
 

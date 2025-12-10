@@ -4,22 +4,24 @@ class ChatMessage {
   final String id;
   final String senderId;
   final String text;
-  final DateTime timestamp;
+  final DateTime createdAt; // ✅ Переименовали timestamp -> createdAt
 
   ChatMessage({
     required this.id,
     required this.senderId,
     required this.text,
-    required this.timestamp,
+    required this.createdAt,
   });
 
   factory ChatMessage.fromFirestore(Map<String, dynamic> data, String id) {
-    Timestamp ts = data['timestamp'] ?? Timestamp.now();
+    // Безопасное получение времени (если null, берем текущее)
+    Timestamp ts = data['createdAt'] ?? data['timestamp'] ?? Timestamp.now();
+
     return ChatMessage(
       id: id,
       senderId: data['senderId'] ?? '',
       text: data['text'] ?? '',
-      timestamp: ts.toDate(),
+      createdAt: ts.toDate(),
     );
   }
 
@@ -27,7 +29,7 @@ class ChatMessage {
     return {
       'senderId': senderId,
       'text': text,
-      'timestamp': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(), // ✅ Сохраняем как createdAt
     };
   }
 }

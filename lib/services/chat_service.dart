@@ -39,7 +39,7 @@ class ChatService {
       id: '',
       senderId: senderId,
       text: text,
-      timestamp: DateTime.now(),
+      createdAt: DateTime.now(),
     );
 
     await _db.collection(_ordersCollection)

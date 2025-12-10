@@ -17,15 +17,14 @@ dependencies:
   flutter:
     sdk: flutter
 
-  flutter_local_notifications: ^19.5.0
-
   # Firebase Core Packages (Updated)
   firebase_core: ^4.2.1
   firebase_auth: ^6.1.2
+  cloud_functions: ^6.0.4
   cloud_firestore: ^6.1.0
   firebase_storage: ^13.0.4
   firebase_messaging: ^16.0.4
-  cloud_functions: ^6.0.4
+  flutter_local_notifications: ^19.5.0
 
   # Geolocation and Mapping (Updated)
   google_maps_flutter: ^2.7.0

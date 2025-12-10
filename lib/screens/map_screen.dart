@@ -4,13 +4,12 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:collection/collection.dart';
 
 import 'package:bolt_usta/services/master_search_service.dart';
 import 'package:bolt_usta/services/metadata_service.dart';
 import 'package:bolt_usta/models/master_map_data.dart';
 import 'package:bolt_usta/screens/order_tracking_screen.dart';
-import 'package:bolt_usta/screens/client/modals//order_creation_modal.dart';
+import 'package:bolt_usta/screens/client/modals/order_creation_modal.dart'; // Путь может отличаться в зависимости от вашей структуры
 import 'package:bolt_usta/core/app_colors.dart';
 
 class MapScreen extends StatefulWidget {
@@ -60,7 +59,7 @@ class _MapScreenState extends State<MapScreen> {
     try {
       _mapStyle = await rootBundle.loadString('assets/map_style.json');
     } catch (e) {
-      debugPrint("Ошибка загрузки стиля карты: $e");
+      debugPrint("Ошибка загрузки стиля: $e");
     }
   }
 
@@ -82,7 +81,7 @@ class _MapScreenState extends State<MapScreen> {
       }
     } catch (e) {
       setState(() {
-        _locationError = 'Не удалось получить местоположение: $e';
+        _locationError = 'Lokasiya xətası: $e';
         _isLoading = false;
       });
     }
@@ -94,16 +93,11 @@ class _MapScreenState extends State<MapScreen> {
 
     _masterStreamSubscription = _searchService
         .streamAvailableMasters(position.latitude, position.longitude, category)
-        .listen(_onNewMasterList, onError: (e) {
-      print('Error streaming masters: $e');
-    });
+        .listen(_onNewMasterList, onError: (e) => print('Search error: $e'));
   }
 
   void _onNewMasterList(List<MasterMapData> newMasters) {
-    if (!mounted) return;
-    setState(() {
-      _availableMasters = newMasters;
-    });
+    if (mounted) setState(() => _availableMasters = newMasters);
   }
 
   Set<Marker> _createMarkers() {
@@ -114,10 +108,7 @@ class _MapScreenState extends State<MapScreen> {
           markerId: MarkerId(master.profile.uid),
           position: master.lastLocation,
           icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-          infoWindow: InfoWindow(
-            title: master.profile.fullName,
-            snippet: '${master.profile.rating.toStringAsFixed(1)} ★',
-          ),
+          infoWindow: InfoWindow(title: master.profile.fullName),
         ),
       );
     }
@@ -135,9 +126,7 @@ class _MapScreenState extends State<MapScreen> {
 
   void _onCategoryChanged(String? newCategory) {
     if (newCategory == null) return;
-    setState(() {
-      _selectedCategory = newCategory;
-    });
+    setState(() => _selectedCategory = newCategory);
     if (_currentPosition != null) {
       _startMasterSearch(_currentPosition!, newCategory);
     }
@@ -146,9 +135,9 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _openOrderCreationModal() async {
     if (_currentPosition == null || _selectedCategory == null) return;
 
-    // ✅ ОПРЕДЕЛЯЕМ: Можно ли делать срочный заказ?
-    // Если мастеров нет (список пуст), то срочный заказ невозможен.
-    final bool canDoEmergency = _availableMasters.isNotEmpty;
+    // ✅ ИСПРАВЛЕНИЕ: Разрешаем срочный заказ всегда (для теста), даже если мастеров 0
+    // Если вы хотите строгую логику, верните: _availableMasters.isNotEmpty
+    const bool canDoEmergency = true;
 
     final result = await showModalBottomSheet(
       context: context,
@@ -159,7 +148,6 @@ class _MapScreenState extends State<MapScreen> {
         category: _selectedCategory!,
         location: GeoPoint(_currentPosition!.latitude, _currentPosition!.longitude),
         targetMasterId: null,
-        // ✅ ПЕРЕДАЕМ ФЛАГ: Разрешен ли срочный вызов?
         allowEmergency: canDoEmergency,
       ),
     );
@@ -169,6 +157,7 @@ class _MapScreenState extends State<MapScreen> {
       final mode = result['mode'];
 
       if (mode == 'emergency') {
+        // Переход на экран таймера
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => OrderTrackingScreen(
@@ -187,27 +176,12 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-    if (_locationError.isNotEmpty) {
-      return Scaffold(body: Center(child: Text(_locationError, style: const TextStyle(color: Colors.red))));
-    }
+    if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (_locationError.isNotEmpty) return Scaffold(body: Center(child: Text(_locationError, style: const TextStyle(color: Colors.red))));
 
     final initialTarget = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
     final markers = _createMarkers();
-
     final bool isCategorySelected = _selectedCategory != null;
-    final bool isMasterAvailable = _availableMasters.isNotEmpty;
-
-    String buttonText;
-    if (!isCategorySelected) {
-      buttonText = 'XİDMƏT SEÇİN';
-    } else if (!isMasterAvailable) {
-      buttonText = 'USTA YOXDUR (Planlı sifariş et)';
-    } else {
-      buttonText = 'USTA ÇAĞIR';
-    }
 
     return Scaffold(
       body: Stack(
@@ -223,11 +197,9 @@ class _MapScreenState extends State<MapScreen> {
             myLocationEnabled: true,
             myLocationButtonEnabled: false,
             zoomControlsEnabled: false,
-            compassEnabled: false,
-            mapToolbarEnabled: false,
           ),
 
-          // Карточка фильтров
+          // Фильтр
           Positioned(
             top: 60,
             left: 20,
@@ -237,22 +209,13 @@ class _MapScreenState extends State<MapScreen> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 15,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 15)],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    'Nəyi təmir edirik?',
-                    style: TextStyle(color: Colors.grey[600], fontSize: 13, fontWeight: FontWeight.w500),
-                  ),
+                  Text('Nəyi təmir edirik?', style: TextStyle(color: Colors.grey[600], fontSize: 13, fontWeight: FontWeight.w500)),
                   const SizedBox(height: 5),
                   DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
@@ -260,19 +223,9 @@ class _MapScreenState extends State<MapScreen> {
                       isExpanded: true,
                       hint: Text("Kateqoriya Seç", style: TextStyle(color: kDarkColor.withOpacity(0.5), fontSize: 18, fontWeight: FontWeight.w600)),
                       icon: const Icon(Icons.keyboard_arrow_down, color: kPrimaryColor),
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: kDarkColor,
-                        fontFamily: 'Montserrat',
-                      ),
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: kDarkColor),
                       onChanged: _onCategoryChanged,
-                      items: _categories.map((String value) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value),
-                        );
-                      }).toList(),
+                      items: _categories.map((val) => DropdownMenuItem(value: val, child: Text(val))).toList(),
                     ),
                   ),
                   if (isCategorySelected)
@@ -286,11 +239,7 @@ class _MapScreenState extends State<MapScreen> {
                             child: const Icon(Icons.people, size: 14, color: kPrimaryColor),
                           ),
                           const SizedBox(width: 8),
-                          // ✅ ИСПРАВЛЕНИЕ: Выводим количество (.length), а не сам список
-                          Text(
-                            '${_availableMasters.length} usta yaxınlıqda',
-                            style: const TextStyle(color: kPrimaryColor, fontWeight: FontWeight.w600),
-                          ),
+                          Text('${_availableMasters.length} usta yaxınlıqda', style: const TextStyle(color: kPrimaryColor, fontWeight: FontWeight.w600)),
                         ],
                       ),
                     )
@@ -299,7 +248,7 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ),
 
-          // Кнопка вызова
+          // Кнопка
           Positioned(
             bottom: 30,
             left: 20,
@@ -307,7 +256,6 @@ class _MapScreenState extends State<MapScreen> {
             child: SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                // Кнопка активна, если выбрана категория (даже если мастеров нет)
                 onPressed: isCategorySelected ? _openOrderCreationModal : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: kPrimaryColor,
@@ -316,12 +264,8 @@ class _MapScreenState extends State<MapScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 18),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   elevation: 5,
-                  shadowColor: kPrimaryColor.withOpacity(0.4),
                 ),
-                child: Text(
-                  buttonText,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: 1.0),
-                ),
+                child: const Text('USTA ÇAĞIR', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: 1.0)),
               ),
             ),
           ),

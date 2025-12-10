@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:bolt_usta/core/app_constants.dart';
 import 'package:bolt_usta/models/order.dart' as app_order;
-import 'package:bolt_usta/models/user_profile.dart'; // Для получения данных Клиента
+import 'package:bolt_usta/models/user_profile.dart';
 import 'package:bolt_usta/services/order_service.dart';
-import 'package:bolt_usta/services/auth_service.dart'; // Используем для получения данных Клиента
+// ✅ ИСПРАВЛЕНИЕ: Используем правильный сервис для получения профилей
+import 'package:bolt_usta/services/user_profile_service.dart';
 
 class MasterActiveOrderScreen extends StatefulWidget {
   final String orderId;
@@ -16,65 +17,51 @@ class MasterActiveOrderScreen extends StatefulWidget {
 
 class _MasterActiveOrderScreenState extends State<MasterActiveOrderScreen> {
   final OrderService _orderService = OrderService();
-  final AuthService _authService = AuthService(); // Используем для получения профиля Клиента
+  // ✅ ИСПРАВЛЕНИЕ: Инициализируем UserProfileService
+  final UserProfileService _userProfileService = UserProfileService();
 
-  // Логика обновления статуса Мастером
+  // Логика обновления статуса
   Future<void> _updateStatus(String newStatus) async {
     try {
       if (newStatus == AppConstants.orderStatusArrived) {
-        // 1. Статус "Çatdım" (Прибыл)
         await _orderService.masterArrived(widget.orderId);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Status yeniləndi: Çatdım.')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Status yeniləndi: Çatdım.')));
       } else if (newStatus == AppConstants.orderStatusCompleted) {
-        // 2. Статус "Bitirdim" (Завершил)
         await _orderService.masterCompleteOrder(widget.orderId);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Sifariş uğurla bitirildi.')),
-        );
-        // Возвращение на MasterDashboard
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sifariş uğurla bitirildi.')));
         Navigator.of(context).popUntil((route) => route.isFirst);
       }
-      setState(() {}); // Принудительное обновление UI для перерисовки кнопки
+      setState(() {});
     } catch (e) {
       print('Ошибка обновления статуса: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Xəta baş verdi. Status dəyişmədi.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Xəta baş verdi. Status dəyişmədi.')));
     }
   }
 
-  // Логика отмены заказа Мастером
+  // Логика отмены
   Future<void> _cancelOrder() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Sifarişi Ləğv Et'), // Отменить заказ
-        content: const Text('Ləğv etsəniz, sifariş başqa ustaya yönləndiriləcəkdir. Əminsiniz?'), // Если отмените, заказ будет передан другому мастеру.
+        title: const Text('Sifarişi Ləğv Et'),
+        content: const Text('Ləğv etsəniz, sifariş başqa ustaya yönləndiriləcəkdir. Əminsiniz?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Xeyr')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Bəli')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Bəli', style: TextStyle(color: Colors.red))),
         ],
       ),
     );
 
     if (confirmed == true) {
       try {
-        // ❗️ Удаляет ID Мастера и меняет Статус Заказа на 'pending'
         await _orderService.masterCancelOrder(widget.orderId);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Sifariş ləğv edildi və yenidən axtarışa verildi.')),
-          );
-          // Возвращение на Master Dashboard
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sifariş ləğv edildi.')));
           Navigator.of(context).pop();
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Ləğvetmə zamanı xəta baş verdi.')),
-          );
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ləğvetmə zamanı xəta baş verdi.')));
         }
       }
     }
@@ -83,7 +70,7 @@ class _MasterActiveOrderScreenState extends State<MasterActiveOrderScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Aktiv Sifariş')), // Активный Заказ
+      appBar: AppBar(title: const Text('Aktiv Sifariş')),
       body: StreamBuilder<app_order.Order?>(
         stream: _orderService.getActiveOrderStream(widget.orderId),
         builder: (context, snapshot) {
@@ -91,109 +78,149 @@ class _MasterActiveOrderScreenState extends State<MasterActiveOrderScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (!snapshot.hasData || snapshot.data == null) {
-            return const Center(child: Text('Sifariş tapılmadı.')); // Заказ не найден
+            return const Center(child: Text('Sifariş tapılmadı.'));
           }
 
           final order = snapshot.data!;
           final isArrived = order.status == AppConstants.orderStatusArrived;
 
-          // *Имитация получения данных Клиента (в реальном проекте - через getProfileData)
-          final Future<UserProfile?> clientFuture = _authService.getCurrentProfileById(order.customerId);
+          // ✅ ИСПРАВЛЕНИЕ: Используем _userProfileService для получения данных клиента
+          final Future<UserProfile?> clientFuture = _userProfileService.getUserProfile(order.customerId);
 
           return Column(
             children: [
               // -----------------------------------------------------------
-              // 1. Placeholder Карты и Информации о Гео
+              // 1. КАРТА
               // -----------------------------------------------------------
               Expanded(
                 child: Container(
-                  color: Colors.blue.shade50,
+                  color: Colors.grey.shade200,
                   alignment: Alignment.center,
-                  child: const Text(
-                    '📍 Xəritə: Klientin yerləşdiyi ünvan', // Карта: адрес клиента
-                    style: TextStyle(color: Colors.grey, fontSize: 16),
+                  child: const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.location_on, size: 40, color: Colors.red),
+                      SizedBox(height: 10),
+                      Text(
+                        '📍 Klientin yerləşdiyi ünvan',
+                        style: TextStyle(color: Colors.grey, fontSize: 16),
+                      ),
+                    ],
                   ),
                 ),
               ),
 
               // -----------------------------------------------------------
-              // 2. Панель Управления и Информация о Клиенте
+              // 2. ДЕТАЛИ ЗАКАЗА
               // -----------------------------------------------------------
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Информация о Заказе
-                    _buildDetailRow('Kateqoriya', order.category),
-                    _buildDetailRow('Problem', order.problemDescription),
-                    const Divider(),
+              Container(
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, -2))],
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                padding: const EdgeInsets.all(20.0),
+                child: SafeArea(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Статус
+                      Text(
+                        'Status: ${_getStatusText(order.status)}',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _getStatusColor(order.status)),
+                      ),
+                      const Divider(height: 25),
 
-                    // Информация о Клиенте
-                    FutureBuilder<UserProfile?>(
-                      future: clientFuture,
-                      builder: (context, clientSnapshot) {
-                        if (!clientSnapshot.hasData || clientSnapshot.data == null) {
-                          return const Text('Klient məlumatları yüklənir...');
-                        }
-                        final client = clientSnapshot.data!;
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Используем getter fullName, который склеивает name + surname
-                            _buildDetailRow('Klient', client.fullName),
-                            _buildDetailRow('Telefon', client.phoneNumber),
-                            const SizedBox(height: 10),
-                            // Кнопки Связи
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceAround,
-                              children: [
-                                _buildContactButton(Icons.phone, 'Zəng Et', () => print('Calling ${client.phoneNumber}')),
-                                _buildContactButton(Icons.message, 'Mesaj Göndər', () => print('Opening chat with ${client.fullName}')),
-                              ],
+                      // Информация о заказе
+                      _buildDetailRow('Kateqoriya', order.category),
+                      _buildDetailRow('Problem', order.problemDescription),
+
+                      const SizedBox(height: 15),
+
+                      // Информация о Клиенте
+                      FutureBuilder<UserProfile?>(
+                        future: clientFuture,
+                        builder: (context, clientSnapshot) {
+                          if (!clientSnapshot.hasData) return const Text('Klient məlumatları yüklənir...');
+
+                          final client = clientSnapshot.data!;
+                          return Column(
+                            children: [
+                              _buildDetailRow('Klient', client.fullName),
+                              _buildDetailRow('Telefon', client.phoneNumber),
+                              const SizedBox(height: 15),
+
+                              // Кнопки связи
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      onPressed: () => print('Calling ${client.phoneNumber}'),
+                                      icon: const Icon(Icons.phone, size: 18),
+                                      label: const Text('Zəng'),
+                                      style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      onPressed: () => print('Chat with ${client.fullName}'),
+                                      icon: const Icon(Icons.message, size: 18),
+                                      label: const Text('Mesaj'),
+                                      style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+
+                      const SizedBox(height: 25),
+
+                      // Кнопки действий
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: _cancelOrder,
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 15),
+                                side: const BorderSide(color: Colors.red),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              child: const Text('Ləğv Et', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
                             ),
-                          ],
-                        );
-                      },
-                    ),
-                    const Divider(),
-
-                    // Кнопки Управления Статусом
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        // Кнопка Отмены
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: _cancelOrder,
-                            child: const Text('Ləğv Et'), // Отменить Заказ
                           ),
-                        ),
-                        const SizedBox(width: 10),
+                          const SizedBox(width: 15),
 
-                        // Кнопка "Çatdım" или "Bitirdim"
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: () {
-                              if (!isArrived) {
-                                _updateStatus(AppConstants.orderStatusArrived); // Çatdım
-                              } else {
-                                _updateStatus(AppConstants.orderStatusCompleted); // Bitirdim
-                              }
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: isArrived ? Colors.green.shade700 : Colors.orange.shade700,
-                              padding: const EdgeInsets.symmetric(vertical: 15),
-                            ),
-                            child: Text(
-                              isArrived ? 'Bitirdim' : 'Çatdım', // Завершил / Прибыл
-                              style: const TextStyle(color: Colors.white, fontSize: 16),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () {
+                                if (!isArrived) {
+                                  _updateStatus(AppConstants.orderStatusArrived);
+                                } else {
+                                  _updateStatus(AppConstants.orderStatusCompleted);
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: isArrived ? Colors.green : Colors.orange,
+                                padding: const EdgeInsets.symmetric(vertical: 15),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                elevation: 0,
+                              ),
+                              child: Text(
+                                isArrived ? 'Bitirdim' : 'Çatdım',
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -203,49 +230,34 @@ class _MasterActiveOrderScreenState extends State<MasterActiveOrderScreen> {
     );
   }
 
-  // Вспомогательный виджет для отображения деталей
   Widget _buildDetailRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('$label: ', style: const TextStyle(fontWeight: FontWeight.w600)),
-          Expanded(child: Text(value)),
+          Text('$label: ', style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.grey)),
+          Expanded(child: Text(value, style: const TextStyle(fontWeight: FontWeight.w500))),
         ],
       ),
     );
   }
 
-  // Вспомогательный виджет для кнопок связи
-  Widget _buildContactButton(IconData icon, String label, VoidCallback onTap) {
-    return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4.0),
-        child: TextButton.icon(
-          onPressed: onTap,
-          icon: Icon(icon),
-          label: Text(label),
-        ),
-      ),
-    );
+  String _getStatusText(String status) {
+    switch (status) {
+      case AppConstants.orderStatusAccepted: return 'Sifariş Qəbul Edildi';
+      case AppConstants.orderStatusArrived: return 'Siz Ünvandasınız';
+      case AppConstants.orderStatusCompleted: return 'Bitdi';
+      default: return status;
+    }
   }
-}
 
-// ❗️ Добавляем заглушку метода для AuthService для компиляции
-extension AuthServiceProfileFetch on AuthService {
-  Future<UserProfile?> getCurrentProfileById(String userId) async {
-    // Имитация получения данных клиента
-    await Future.delayed(const Duration(milliseconds: 200));
-
-    // ✅ ИСПРАВЛЕНО: Передаем name и surname отдельно, и используем правильную константу роли
-    return UserProfile(
-      uid: userId,
-      phoneNumber: '99470xxxxxx',
-      createdAt: DateTime.now(),
-      name: 'Fərid',          // Имя отдельно
-      surname: 'Həsənov',     // Фамилия отдельно
-      role: AppConstants.dbRoleCustomer, // Правильная константа (dbRoleCustomer)
-    );
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case AppConstants.orderStatusAccepted: return Colors.blue;
+      case AppConstants.orderStatusArrived: return Colors.orange;
+      case AppConstants.orderStatusCompleted: return Colors.green;
+      default: return Colors.black;
+    }
   }
 }

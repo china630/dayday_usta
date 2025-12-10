@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // ✅ Импорт
 import 'package:provider/provider.dart';
 import 'package:bolt_usta/core/app_constants.dart';
 import 'package:bolt_usta/services/auth_service.dart';
@@ -13,9 +15,27 @@ import 'package:bolt_usta/firebase_options.dart';
 import 'package:bolt_usta/models/user_profile.dart';
 import 'package:bolt_usta/models/master_profile.dart';
 import 'package:bolt_usta/managers/location_manager.dart';
-
-// ✅ Импорт цветов
 import 'package:bolt_usta/core/app_colors.dart';
+
+// ✅ 1. Определяем канал уведомлений для Android (ТО ЖЕ ИМЯ, ЧТО НА СЕРВЕРЕ)
+const AndroidNotificationChannel channel = AndroidNotificationChannel(
+  'emergency_orders', // id
+  'Təcili Sifarişlər', // title (видимый пользователю)
+  description: 'Bu kanal təcili sifariş bildirişləri üçündür.', // description
+  importance: Importance.max, // Максимальная важность (всплывающее окно + звук)
+  playSound: true,
+);
+
+// Глобальный плагин уведомлений
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+FlutterLocalNotificationsPlugin();
+
+// Фоновый обработчик (обязателен для Android)
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+  print('Handling a background message ${message.messageId}');
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,6 +43,29 @@ void main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+
+    // Регистрация фонового обработчика
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+    // ✅ 2. Создаем канал уведомлений на устройстве
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
+
+    // ✅ 3. Настройка отображения (Foreground)
+    await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    // Запрос прав
+    await FirebaseMessaging.instance.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
   } catch (e) {
     print('Firebase initialization error: $e');
   }
@@ -73,7 +116,7 @@ class BoltUstaApp extends StatelessWidget {
             foregroundColor: Colors.white,
             elevation: 0,
             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide.none),
             textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
         ),
@@ -81,18 +124,9 @@ class BoltUstaApp extends StatelessWidget {
           filled: true,
           fillColor: Colors.white,
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade300, width: 1),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: kPrimaryColor, width: 2),
-          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300, width: 1)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: kPrimaryColor, width: 2)),
         ),
         bottomNavigationBarTheme: const BottomNavigationBarThemeData(
           backgroundColor: Colors.white,
@@ -116,10 +150,10 @@ class Wrapper extends StatelessWidget {
     if (role == AppConstants.dbRoleCustomer) {
       return ClientMainShell(currentUserId: userId);
     } else if (role == AppConstants.dbRoleMaster) {
-      // ✅ Теперь это сработает, так как profile реально является MasterProfile
       final masterProfile = profile as MasterProfile;
       return MasterDashboardScreen(masterId: userId, masterProfile: masterProfile);
-    } else if (role == AppConstants.dbRoleAdmin) {
+    }
+    else if (role == AppConstants.dbRoleAdmin || role == 'admin') {
       return AdminDashboardScreen(currentUserId: userId);
     }
 

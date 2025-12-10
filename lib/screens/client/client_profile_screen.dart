@@ -4,6 +4,8 @@ import 'package:bolt_usta/services/auth_service.dart';
 import 'package:bolt_usta/services/user_profile_service.dart';
 import 'package:bolt_usta/models/user_profile.dart';
 import 'package:bolt_usta/screens/auth/auth_screen.dart';
+// ✅ ИСПРАВЛЕН ИМПОРТ (добавлена точка с запятой)
+import 'package:bolt_usta/screens/debug/debug_log_screen.dart';
 
 class ClientProfileScreen extends StatefulWidget {
   final String currentUserId;
@@ -20,7 +22,10 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
 
   UserProfile? _profile;
   bool _isLoading = true;
-  String _selectedLanguage = 'AZ'; // Выбор языка (визуальный)
+  String _selectedLanguage = 'AZ';
+
+  // Счетчик для секретного меню
+  int _debugTapCount = 0;
 
   @override
   void initState() {
@@ -38,13 +43,9 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
     }
   }
 
-  // ✅ ИСПРАВЛЕННАЯ ЛОГИКА ВЫХОДА
   Future<void> _signOut() async {
     try {
-      // 1. Выходим из Firebase
       await _authService.signOut();
-
-      // 2. Принудительно переходим на экран авторизации, удаляя историю
       if (mounted) {
         Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const AuthScreen()),
@@ -66,10 +67,9 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
     }
 
     return Scaffold(
-      backgroundColor: kBackgroundColor, // Светло-серый фон для тела
+      backgroundColor: kBackgroundColor,
       body: Column(
         children: [
-          // 1. МЯТНАЯ ШАПКА
           Container(
             padding: const EdgeInsets.only(top: 50, bottom: 20),
             width: double.infinity,
@@ -85,22 +85,30 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                 ),
                 const SizedBox(height: 20),
 
-                // Аватар
-                Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withOpacity(0.2),
-                  ),
-                  child: const CircleAvatar(
-                    radius: 50,
-                    backgroundColor: Colors.white,
-                    child: Icon(Icons.person, size: 60, color: kPrimaryColor),
+                // Аватар с секретной кнопкой
+                GestureDetector(
+                  onTap: () {
+                    _debugTapCount++;
+                    if (_debugTapCount >= 5) {
+                      _debugTapCount = 0;
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const DebugLogScreen()));
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withOpacity(0.2),
+                    ),
+                    child: const CircleAvatar(
+                      radius: 50,
+                      backgroundColor: Colors.white,
+                      child: Icon(Icons.person, size: 60, color: kPrimaryColor),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 15),
 
-                // Имя
                 Text(
                   _profile?.fullName ?? "İstifadəçi",
                   style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
@@ -113,7 +121,6 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
             ),
           ),
 
-          // 2. КОНТЕНТ (Белая карточка)
           Expanded(
             child: Container(
               margin: const EdgeInsets.all(20),
@@ -129,7 +136,6 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Выбор языка
                   const Text("Dil seçimi", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: kDarkColor)),
                   const SizedBox(height: 15),
                   Row(
@@ -144,7 +150,6 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
 
                   const Spacer(),
 
-                  // Кнопка выхода
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(

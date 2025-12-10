@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:bolt_usta/services/auth_service.dart';
-import 'package:bolt_usta/core/app_colors.dart'; // ✅ Ваши цвета
+import 'package:bolt_usta/core/app_colors.dart';
+import 'package:bolt_usta/core/app_constants.dart'; // ✅ Добавлен импорт констант
 import 'package:bolt_usta/screens/auth/role_selection_screen.dart';
 import 'package:bolt_usta/screens/client/client_main_shell.dart';
 import 'package:bolt_usta/screens/master/master_dashboard_screen.dart';
+import 'package:bolt_usta/screens/admin/admin_dashboard_screen.dart'; // ✅ Импорт Админки
 import 'package:bolt_usta/services/user_profile_service.dart';
 import 'package:bolt_usta/models/master_profile.dart';
 
@@ -30,7 +32,6 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
   bool _isLoading = false;
 
-  // Таймер
   Timer? _timer;
   int _start = 60;
   bool _canResend = false;
@@ -39,7 +40,6 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   void initState() {
     super.initState();
     _startTimer();
-    // Автоматически открываем клавиатуру
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
     });
@@ -53,7 +53,6 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     super.dispose();
   }
 
-  // Логика таймера
   void _startTimer() {
     setState(() {
       _start = 60;
@@ -74,21 +73,14 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     });
   }
 
-  // Логика повторной отправки (Здесь нужно вызвать метод из AuthService)
   void _resendCode() {
     if (!_canResend) return;
-
-    // Тут вы должны вызвать метод отправки SMS повторно.
-    // Пока просто перезапустим таймер для визуализации.
-    // context.read<AuthService>().verifyPhoneNumber(widget.phoneNumber);
-
     _startTimer();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Kod yenidən göndərildi!")),
     );
   }
 
-  // Проверка кода
   Future<void> _verifyOtp() async {
     final code = _codeController.text.trim();
     if (code.length != 6) return;
@@ -101,10 +93,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         smsCode: code,
       );
 
-      // Вход через Firebase
       await FirebaseAuth.instance.signInWithCredential(credential);
 
-      // Проверяем профиль и перенаправляем
       if (mounted) {
         await _checkUserProfileAndRedirect();
       }
@@ -127,6 +117,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     }
   }
 
+  // ✅ ИСПРАВЛЕННЫЙ МЕТОД РОУТИНГА
   Future<void> _checkUserProfileAndRedirect() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -136,18 +127,28 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
     if (!mounted) return;
 
-    // Убираем все экраны из стека и переходим на нужный
     if (profile == null) {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => RoleSelectionScreen(firebaseUser: user)),
             (route) => false,
       );
-    } else if (profile.role == 'client') {
+    }
+    // ✅ АДМИН (Добавлено условие)
+    else if (profile.role == AppConstants.dbRoleAdmin || profile.role == 'admin') {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => AdminDashboardScreen(currentUserId: user.uid)),
+            (route) => false,
+      );
+    }
+    // КЛИЕНТ
+    else if (profile.role == AppConstants.dbRoleCustomer) {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => ClientMainShell(currentUserId: user.uid)),
             (route) => false,
       );
-    } else if (profile.role == 'master') {
+    }
+    // МАСТЕР
+    else if (profile.role == AppConstants.dbRoleMaster) {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => MasterDashboardScreen(
             masterId: user.uid,
@@ -189,10 +190,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
               const SizedBox(height: 40),
 
-              // ✅ КАСТОМНОЕ ПОЛЕ ВВОДА (6 БОКСОВ)
               Stack(
                 children: [
-                  // 1. Скрытое поле ввода (ловит фокус и клавиатуру)
                   Opacity(
                     opacity: 0,
                     child: TextFormField(
@@ -201,14 +200,13 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                       keyboardType: TextInputType.number,
                       maxLength: 6,
                       onChanged: (val) {
-                        setState(() {}); // Обновляем UI боксов
+                        setState(() {});
                         if (val.length == 6) {
-                          _verifyOtp(); // Авто-отправка при заполнении
+                          _verifyOtp();
                         }
                       },
                     ),
                   ),
-                  // 2. Визуальные боксы
                   GestureDetector(
                     onTap: () => _focusNode.requestFocus(),
                     child: Row(
@@ -223,7 +221,6 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
               const SizedBox(height: 30),
 
-              // ✅ ТАЙМЕР И ССЫЛКА "ПЕРЕСЛАТЬ"
               Center(
                 child: Column(
                   children: [
@@ -238,11 +235,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                         onPressed: _resendCode,
                         child: const Text(
                           "Kodu yenidən göndər",
-                          style: TextStyle(
-                              color: kPrimaryColor,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16
-                          ),
+                          style: TextStyle(color: kPrimaryColor, fontWeight: FontWeight.bold, fontSize: 16),
                         ),
                       ),
                   ],
@@ -251,7 +244,6 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
               const Spacer(),
 
-              // Кнопка подтверждения (на всякий случай, хотя есть авто-ввод)
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -277,7 +269,6 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     );
   }
 
-  // Виджет одного бокса
   Widget _buildDigitBox(int index) {
     final text = _codeController.text;
     final isFilled = index < text.length;
@@ -290,7 +281,6 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(
-          // Зеленая рамка, если бокс в фокусе или заполнен
           color: (isFocused || isFilled) ? kPrimaryColor : Colors.grey.shade300,
           width: (isFocused || isFilled) ? 2 : 1,
         ),
@@ -302,11 +292,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       child: Center(
         child: Text(
           char,
-          style: const TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: kDarkColor,
-          ),
+          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: kDarkColor),
         ),
       ),
     );
