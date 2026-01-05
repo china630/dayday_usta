@@ -5,9 +5,8 @@ import 'package:bolt_usta/models/order.dart' as app_order;
 import 'package:bolt_usta/models/master_profile.dart';
 import 'package:bolt_usta/services/order_service.dart';
 import 'package:bolt_usta/services/master_service.dart';
-// import 'package:google_maps_flutter/google_maps_flutter.dart'; // Карта
-import 'package:bolt_usta/services/auth_service.dart'; // Для получения данных Клиента (заглушка)
-// import 'package:bolt_usta/screens/client/review_form_screen.dart'; // Экран Отзыва
+import 'package:bolt_usta/services/auth_service.dart';
+// import 'package:bolt_usta/screens/chat/chat_screen.dart'; // Раскомментируйте, когда добавите чат
 
 class ActiveOrderScreen extends StatefulWidget {
   final String orderId;
@@ -23,28 +22,13 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   final MasterService _masterService = MasterService();
   final AuthService _authService = AuthService();
 
-  Future<MasterProfile?> _getMasterDetails(String masterId) async {
-    // 💡 ЗАГЛУШКА: Возвращаем данные мастера для отображения
-    await Future.delayed(const Duration(milliseconds: 300));
-    return MasterProfile(
-      uid: masterId,
-      phoneNumber: '99450xxxxxx',
-      createdAt: DateTime.now(),
-      name: 'Мастер', // ✅ ИСПРАВЛЕНО: name
-      surname: 'Заказов X', // ✅ ИСПРАВЛЕНО: surname
-      verificationStatus: AppConstants.verificationVerified,
-      rating: 4.5,
-      categories: ['Elektrik'],
-    );
-  }
-
   // Логика отмены заказа клиентом
   Future<void> _cancelOrder() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Sifarişi Ləğv Et'), // Отменить заказ
-        content: const Text('Sifarişi ləğv etmək istədiyinizə əminsiniz?'), // Вы уверены?
+        title: const Text('Sifarişi Ləğv Et'),
+        content: const Text('Sifarişi ləğv etmək istədiyinizə əminsiniz?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Xeyr')),
           TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Bəli')),
@@ -59,7 +43,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Sifariş ləğv edildi.')),
           );
-          // Возвращение на главный экран
           Navigator.of(context).popUntil((route) => route.isFirst);
         }
       } catch (e) {
@@ -75,7 +58,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Aktiv Sifariş')), // Активный Заказ
+      appBar: AppBar(title: const Text('Aktiv Sifariş')),
       body: StreamBuilder<app_order.Order?>(
         stream: _orderService.getActiveOrderStream(widget.orderId),
         builder: (context, snapshot) {
@@ -83,7 +66,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError || !snapshot.hasData || snapshot.data == null) {
-            return const Center(child: Text('Sifariş məlumatı tapılmadı.')); // Данные заказа не найдены
+            return const Center(child: Text('Sifariş məlumatı tapılmadı.'));
           }
 
           final order = snapshot.data!;
@@ -97,11 +80,11 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
           }
 
           if (isCompleted) {
-            // NOTE: Здесь должен быть автоматический переход на ReviewFormScreen
+            // Здесь можно добавить переход на экран отзыва, если он еще не оставлен
             return _buildStatusScreen('Sifariş Bitirildi. Qiymətləndirin.', Colors.green);
           }
 
-          // 2. Основной интерфейс (Карта + Детали)
+          // 2. Основной интерфейс
           return Column(
             children: [
               // 2.1. Placeholder Карты
@@ -110,10 +93,9 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                   color: Colors.grey.shade200,
                   alignment: Alignment.center,
                   child: const Text(
-                    '📍 Xəritə sahəsi (Usta hərəkəti burada izlənilir)', // Область карты
+                    '📍 Xəritə sahəsi (Usta hərəkəti burada izlənilir)',
                     style: TextStyle(color: Colors.grey, fontSize: 16),
                   ),
-                  // Здесь должен быть GoogleMap Widget
                 ),
               ),
 
@@ -129,7 +111,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                     ),
                     const Divider(),
 
-                    // Информация о Заказе
                     _buildDetailRow('Kateqoriya', order.category),
                     _buildDetailRow('Problem', order.problemDescription),
 
@@ -138,7 +119,8 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                     // Информация о Мастере
                     if (isMasterAssigned)
                       FutureBuilder<MasterProfile?>(
-                        future: _getMasterDetails(order.masterId!),
+                        // ✅ ИСПРАВЛЕНИЕ: Запрос к реальному сервису
+                        future: _masterService.getProfileData(order.masterId!),
                         builder: (context, masterSnapshot) {
                           if (masterSnapshot.connectionState == ConnectionState.waiting) {
                             return const Center(child: Text('Usta məlumatları yüklənir...'));
@@ -148,15 +130,16 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildDetailRow('Usta', master.fullName), // Используем геттер fullName
+                                _buildDetailRow('Usta', master.fullName),
                                 _buildDetailRow('Reytinq', master.rating.toStringAsFixed(1), icon: Icons.star, color: Colors.amber),
-                                // Кнопка Чата
+
                                 const SizedBox(height: 10),
                                 SizedBox(
                                   width: double.infinity,
                                   child: OutlinedButton.icon(
                                     onPressed: () {
-                                      // Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(orderId: order.id, masterId: master.uid, customerId: order.customerId)));
+                                      // Логика открытия чата
+                                      // Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(...)));
                                       print('Переход в Чат с мастером: ${master.fullName}');
                                     },
                                     icon: const Icon(Icons.message),
@@ -171,7 +154,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                       )
                     else
                       const Text(
-                        'Usta axtarılır...', // Идет поиск Мастера...
+                        'Usta axtarılır...',
                         style: TextStyle(fontStyle: FontStyle.italic, color: Colors.blue),
                       ),
 
@@ -183,7 +166,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                       child: ElevatedButton.icon(
                         onPressed: _cancelOrder,
                         icon: const Icon(Icons.close, color: Colors.white),
-                        label: const Text('Sifarişi Ləğv Et', style: TextStyle(color: Colors.white)), // Отменить Заказ
+                        label: const Text('Sifarişi Ləğv Et', style: TextStyle(color: Colors.white)),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.red.shade700,
                           padding: const EdgeInsets.symmetric(vertical: 15),
@@ -200,7 +183,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     );
   }
 
-  // Вспомогательный виджет для отображения деталей
   Widget _buildDetailRow(String label, String value, {IconData? icon, Color? color}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
@@ -223,7 +205,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     );
   }
 
-  // Вспомогательный виджет для отображения статуса
   Widget _buildStatusScreen(String message, Color color) {
     return Center(
       child: Column(
@@ -239,7 +220,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color),
             ),
           ),
-          // Кнопка для возврата на Главную
           ElevatedButton(
             onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
             child: const Text('Əsas Səhifəyə Qayıt'),
@@ -249,35 +229,23 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     );
   }
 
-  // Получение текстового статуса
   String _getStatusText(String status) {
     switch (status) {
-      case AppConstants.orderStatusPending:
-        return 'Usta axtarılır...'; // Идет поиск мастера
-      case AppConstants.orderStatusAccepted:
-        return 'Usta Sifarişi Qəbul Etdi'; // Мастер принял заказ
-      case AppConstants.orderStatusArrived:
-        return 'Usta Çatdı'; // Мастер прибыл
-      case AppConstants.orderStatusCompleted:
-        return 'Sifariş Bitirildi'; // Заказ завершен
-      case AppConstants.orderStatusCancelled:
-        return 'Ləğv Edildi'; // Отменен
-      default:
-        return 'Naməlum Status';
+      case AppConstants.orderStatusPending: return 'Usta axtarılır...';
+      case AppConstants.orderStatusAccepted: return 'Usta Sifarişi Qəbul Etdi';
+      case AppConstants.orderStatusArrived: return 'Usta Çatdı';
+      case AppConstants.orderStatusCompleted: return 'Sifariş Bitirildi';
+      case AppConstants.orderStatusCancelled: return 'Ləğv Edildi';
+      default: return 'Naməlum Status';
     }
   }
 
-  // Получение цвета статуса
   Color _getStatusColor(String status) {
     switch (status) {
-      case AppConstants.orderStatusAccepted:
-        return Colors.green;
-      case AppConstants.orderStatusArrived:
-        return Colors.orange.shade700;
-      case AppConstants.orderStatusPending:
-        return Colors.blue.shade700;
-      default:
-        return Colors.black;
+      case AppConstants.orderStatusAccepted: return Colors.green;
+      case AppConstants.orderStatusArrived: return Colors.orange.shade700;
+      case AppConstants.orderStatusPending: return Colors.blue.shade700;
+      default: return Colors.black;
     }
   }
 }
