@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:bolt_usta/services/review_service.dart';
-// import 'package:bolt_usta/screens/client/customer_home_screen.dart'; // Перенаправление после отзыва
+import 'package:dayday_usta/services/review_service.dart';
+// import 'package:dayday_usta/screens/client/customer_home_screen.dart'; // Перенаправление после отзыва
 
 class ReviewFormScreen extends StatefulWidget {
   // Экран может вызываться из трех мест, но для сохранения логики требуется

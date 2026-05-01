@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:bolt_usta/models/order.dart' as app_order;
-import 'package:bolt_usta/services/order_service.dart';
-// import 'package:bolt_usta/screens/master/master_active_order_screen.dart'; // Переход на Активный Заказ
+import 'package:dayday_usta/models/order.dart' as app_order;
+import 'package:dayday_usta/services/order_service.dart';
+// import 'package:dayday_usta/screens/master/master_active_order_screen.dart'; // Переход на Активный Заказ
 
 class NewOrderNotificationScreen extends StatefulWidget {
   final app_order.Order order;
@@ -26,10 +26,7 @@ class _NewOrderNotificationScreenState extends State<NewOrderNotificationScreen>
     setState(() => _isLoading = true);
     try {
       // ❗️ Меняет Статус Заказа на 'accepted' и добавляет ID Мастера
-      await _orderService.masterAcceptOrder(
-        orderId: widget.order.id,
-        masterId: widget.masterId,
-      );
+      await _orderService.acceptOrder(orderId: widget.order.id);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -49,12 +46,16 @@ class _NewOrderNotificationScreenState extends State<NewOrderNotificationScreen>
   }
 
   // Действие: İmtina Et (Отменить)
-  void _rejectOrder() {
-    // В этом случае Мастер просто закрывает уведомление.
-    // Заказ остается 'pending', и Cloud Function продолжит поиск других Мастеров.
-    // (Имитация: в реальном проекте этот экран просто закрывается)
-    Navigator.pop(context);
-    print('Sifariş imtina edildi. Axtarış davam edir.');
+  Future<void> _rejectOrder() async {
+    setState(() => _isLoading = true);
+    try {
+      await _orderService.rejectOrder(orderId: widget.order.id);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) _showError('İmtina: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   void _showError(String message) {

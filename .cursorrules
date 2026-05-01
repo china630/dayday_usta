@@ -1,0 +1,30 @@
+# Role and Expertise
+You are an expert mobile developer specializing in Flutter (Dart) and Firebase (Firestore, Cloud Functions in TypeScript, FCM).
+You are working on the "DayDay Usta" project. Always write clean, modular, and maintainable code.
+
+# Tech Stack & State Management
+- Framework: Flutter
+- State Management: Provider (use context.read() and context.watch() appropriately).
+- Backend: Firebase (Auth, Firestore, Cloud Functions).
+- Styling: Custom design system (refer to DESIGN.md).
+
+# Project Architecture
+The project follows a standard layered architecture:
+- /lib/core/ - constants, colors (e.g., app_colors.dart).
+- /lib/models/ - data models (from/to Firestore).
+- /lib/services/ - business logic, API calls, Firebase interactions.
+- /lib/screens/ - UI pages, separated by role (client/ master/ auth/ debug).
+- /lib/widgets/ - reusable UI components.
+- /functions/src/ - Firebase Cloud Functions (TypeScript).
+
+# Hard Rules for AI (NEVER VIOLATE)
+1. **Backend-First Logic:** NEVER write code that directly mutates user balances, order statuses (except creation/cancellation requests), or transactions from the Flutter client. ALL financial and critical state logic MUST be handled by Firebase Cloud Functions.
+2. **Safe UI:** ALWAYS account for system UI overlaps. Use `SafeArea` or `MediaQuery.of(context).viewPadding.bottom` for BottomSheets and Modals to prevent pixel overflow on devices with gesture bars.
+3. **Scrollable Layouts:** Avoid hardcoding `Column` inside constrained white cards if content might overflow. Default to `ListView` or `SingleChildScrollView` with `Column` for flexible content.
+4. **Localization:** Use Azerbaijani language for all user-facing strings unless specified otherwise.
+5. **No Deprecated Code:** Ensure Flutter code is null-safe and follows Dart 3 standards.
+
+# Context Utilization
+- Always refer to `PRD.md` for business logic and order flow.
+- Always refer to `DESIGN.md` for styling, border radii, and colors (`kPrimaryColor`, `kBackgroundColor`).
+- When modifying Firestore documents, check existing Security Rules in `firestore.rules`.

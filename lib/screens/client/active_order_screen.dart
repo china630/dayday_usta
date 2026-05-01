@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:bolt_usta/core/app_constants.dart';
-import 'package:bolt_usta/models/order.dart' as app_order;
-import 'package:bolt_usta/models/master_profile.dart';
-import 'package:bolt_usta/services/order_service.dart';
-import 'package:bolt_usta/services/master_service.dart';
-import 'package:bolt_usta/services/auth_service.dart';
-// import 'package:bolt_usta/screens/chat/chat_screen.dart'; // Раскомментируйте, когда добавите чат
+import 'package:dayday_usta/core/app_constants.dart';
+import 'package:dayday_usta/models/order.dart' as app_order;
+import 'package:dayday_usta/models/master_profile.dart';
+import 'package:dayday_usta/services/order_service.dart';
+import 'package:dayday_usta/services/master_service.dart';
+import 'package:dayday_usta/widgets/pending_client_search_subtitle.dart';
+// import 'package:dayday_usta/screens/chat/chat_screen.dart'; // Раскомментируйте, когда добавите чат
 
 class ActiveOrderScreen extends StatefulWidget {
   final String orderId;
@@ -20,7 +19,6 @@ class ActiveOrderScreen extends StatefulWidget {
 class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   final OrderService _orderService = OrderService();
   final MasterService _masterService = MasterService();
-  final AuthService _authService = AuthService();
 
   // Логика отмены заказа клиентом
   Future<void> _cancelOrder() async {
@@ -38,7 +36,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
 
     if (confirmed == true) {
       try {
-        await _orderService.clientCancelOrder(widget.orderId);
+        await _orderService.clientCancelOrder(widget.orderId, reason: 'user_cancel');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Sifariş ləğv edildi.')),
@@ -47,9 +45,8 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Ləğvetmə zamanı xəta baş verdi.')),
-          );
+          final msg = e is Exception ? e.toString().replaceFirst('Exception: ', '') : 'Ləğvetmə zamanı xəta baş verdi.';
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
         }
       }
     }
@@ -72,7 +69,8 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
           final order = snapshot.data!;
           final isMasterAssigned = order.masterId != null;
           final isCompleted = order.status == AppConstants.orderStatusCompleted;
-          final isCancelled = order.status == AppConstants.orderStatusCancelled;
+          final isCancelled = order.status == AppConstants.orderStatusCancelled ||
+              order.status == AppConstants.orderStatusCanceledByMaster;
 
           // 1. Обработка завершенных/отмененных заказов
           if (isCancelled) {
@@ -153,9 +151,19 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                         },
                       )
                     else
-                      const Text(
-                        'Usta axtarılır...',
-                        style: TextStyle(fontStyle: FontStyle.italic, color: Colors.blue),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Usta axtarılır...',
+                            style: TextStyle(fontStyle: FontStyle.italic, color: Colors.blue),
+                          ),
+                          const SizedBox(height: 8),
+                          PendingClientSearchSubtitle(
+                            order: order,
+                            style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
+                          ),
+                        ],
                       ),
 
                     const SizedBox(height: 20),
@@ -236,6 +244,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       case AppConstants.orderStatusArrived: return 'Usta Çatdı';
       case AppConstants.orderStatusCompleted: return 'Sifariş Bitirildi';
       case AppConstants.orderStatusCancelled: return 'Ləğv Edildi';
+      case AppConstants.orderStatusCanceledByMaster: return 'Usta ləğv etdi';
       default: return 'Naməlum Status';
     }
   }

@@ -85,7 +85,10 @@ class LocationService {
     final user = _auth.currentUser;
     if (user != null) {
       // Обновить статус Мастера на "offline"
-      await _firestore.collection('users').doc(user.uid).update({'status': 'offline'});
+      await _firestore.collection('users').doc(user.uid).update({
+        'isOnline': false,
+        'status': 'free',
+      });
     }
     print('LocationService: Location updates stopped and master status set to offline.');
   }

@@ -1,13 +1,16 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:bolt_usta/models/user_profile.dart';
-import 'package:bolt_usta/models/master_profile.dart';
-import 'package:bolt_usta/core/app_constants.dart';
-import 'package:bolt_usta/services/user_profile_service.dart';
+import 'package:firebase_messaging/firebase_messaging.dart'; // ✅ Добавил для уведомлений
+
+import 'package:dayday_usta/models/user_profile.dart';
+import 'package:dayday_usta/models/master_profile.dart';
+import 'package:dayday_usta/core/app_constants.dart';
+import 'package:dayday_usta/services/user_profile_service.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseMessaging _fcm = FirebaseMessaging.instance; // ✅ Инстанс FCM
   final UserProfileService _userProfileService = UserProfileService();
 
   Stream<User?> get authStateChanges => _auth.authStateChanges();
@@ -28,13 +31,18 @@ class AuthService {
     return null;
   }
 
-  // Регистрация Клиента
+  // ---------------------------------------------------------------------------
+  // РЕГИСТРАЦИЯ КЛИЕНТА
+  // ---------------------------------------------------------------------------
   Future<void> registerClient({
     required String uid,
     required String phoneNumber,
     required String name,
     required String surname,
   }) async {
+    // ✅ Получаем токен для уведомлений сразу при регистрации
+    String? fcmToken = await _fcm.getToken();
+
     final userProfile = UserProfile(
       uid: uid,
       phoneNumber: phoneNumber,
@@ -42,12 +50,19 @@ class AuthService {
       createdAt: DateTime.now(),
       name: name,
       surname: surname,
+      fcmToken: fcmToken, // ✅ Сохраняем токен
+
+      // 💰 Инициализируем нулями. Бонус (20 AZN) начислит сервер.
+      balance: 0.0,
+      frozenBalance: 0.0,
     );
 
     await _db.collection('users').doc(uid).set(userProfile.toFirestore());
   }
 
-  // Регистрация Мастера
+  // ---------------------------------------------------------------------------
+  // РЕГИСТРАЦИЯ МАСТЕРА
+  // ---------------------------------------------------------------------------
   Future<void> registerMaster({
     required String uid,
     required String phoneNumber,
@@ -56,25 +71,40 @@ class AuthService {
     required List<String> categories,
     required List<String> districts,
   }) async {
-    // ✅ ИСПРАВЛЕНО: Добавлен параметр 'role'
+    // ✅ Получаем токен для уведомлений
+    String? fcmToken = await _fcm.getToken();
+
     final masterProfile = MasterProfile(
       uid: uid,
       phoneNumber: phoneNumber,
-      role: 'master', // <--- ВОТ ЗДЕСЬ ИСПРАВЛЕНИЕ
+      role: 'master',
       createdAt: DateTime.now(),
       name: name,
       surname: surname,
+      fcmToken: fcmToken, // ✅ Сохраняем токен
+
+      // 💰 Инициализируем нулями.
+      balance: 0.0,
+      frozenBalance: 0.0,
+
       categories: categories,
       districts: districts,
-      status: AppConstants.masterStatusUnavailable, // Изначально недоступен
-      verificationStatus: AppConstants.verificationPending, // Ждет верификации
+      status: AppConstants.masterStatusUnavailable,
+      verificationStatus: AppConstants.verificationPending,
+
+      // Дефолтные значения для статистики (чтобы не было null в UI)
+      achievements: '',
+      priceList: '',
+      rating: 5.0,
+      viewsCount: 0,
+      callsCount: 0,
+      savesCount: 0,
     );
 
-    // Сохраняем профиль
+    // 1. Сохраняем профиль мастера
     await _db.collection('users').doc(uid).set(masterProfile.toFirestore());
 
-    // Обновляем фильтры поиска (3NF)
-    // Внимание: Этот код дублируется в MasterService, лучше бы вынести, но пока оставим здесь
+    // 2. Обновляем фильтры поиска (Твой код с Batch Write)
     final batch = _db.batch();
 
     // Категории
@@ -89,5 +119,18 @@ class AuthService {
     }
 
     await batch.commit();
+  }
+
+  // Полезный метод для обновления токена при входе (если юзер сменил телефон)
+  Future<void> updateUserToken() async {
+    final user = _auth.currentUser;
+    if (user != null) {
+      String? token = await _fcm.getToken();
+      if (token != null) {
+        await _db.collection('users').doc(user.uid).update({
+          'fcmToken': token,
+        });
+      }
+    }
   }
 }

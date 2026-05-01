@@ -3,18 +3,16 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart';
 
-import 'package:bolt_usta/services/order_service.dart';
-import 'package:bolt_usta/services/review_service.dart';
-import 'package:bolt_usta/core/app_constants.dart';
-import 'package:bolt_usta/core/app_colors.dart';
-import 'package:bolt_usta/models/order.dart' as app_order;
-import 'package:bolt_usta/models/master_profile.dart';
-import 'package:bolt_usta/screens/chat/chat_screen.dart';
-import 'package:bolt_usta/screens/client/modals/rate_master_modal.dart';
-import 'package:bolt_usta/screens/client/modals/order_creation_modal.dart';
+import 'package:dayday_usta/services/order_service.dart';
+import 'package:dayday_usta/core/app_constants.dart';
+import 'package:dayday_usta/core/app_colors.dart';
+import 'package:dayday_usta/models/order.dart' as app_order;
+import 'package:dayday_usta/models/master_profile.dart';
+import 'package:dayday_usta/screens/chat/chat_screen.dart';
+import 'package:dayday_usta/screens/client/modals/rate_master_modal.dart';
+import 'package:dayday_usta/screens/client/modals/order_creation_modal.dart';
+import 'package:dayday_usta/widgets/pending_client_search_subtitle.dart';
 
 class OrderTrackingScreen extends StatefulWidget {
   final String orderId;
@@ -43,7 +41,6 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
   app_order.Order? _currentOrder;
 
   MasterProfile? _masterProfile;
-  GoogleMapController? _mapController;
 
   Timer? _searchTimeoutTimer;
   int _searchSeconds = 0;
@@ -51,7 +48,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
 
   // Время ожидания будет определяться динамически
   int get _currentTimeoutLimit {
-    if (_currentOrder?.type == 'scheduled') {
+    if (_currentOrder?.type == app_order.OrderType.scheduled) {
       return 900; // 15 минут для плановых
     }
     return 15; // 15 секунд для срочных (по умолчанию)
@@ -93,7 +90,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
         timer.cancel();
 
         // 🔥 ЛОГИКА ЗАВЕРШЕНИЯ ПОИСКА
-        if (_currentOrder?.type == 'scheduled') {
+        if (_currentOrder?.type == app_order.OrderType.scheduled) {
           // 1. ПЛАНОВЫЙ: Авто-отмена и выход
           _handleScheduledTimeout();
         } else {
@@ -107,7 +104,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
   // Логика для планового заказа (Авто-отмена)
   Future<void> _handleScheduledTimeout() async {
     try {
-      await _orderService.clientCancelOrder(widget.orderId);
+      await _orderService.clientCancelOrder(widget.orderId, reason: 'scheduled_timeout_no_master');
       if (mounted) {
         Navigator.pop(context); // Возвращаемся назад
         ScaffoldMessenger.of(context).showSnackBar(
@@ -175,14 +172,14 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
 
   Future<void> _retrySearch() async {
     if (_currentOrder == null) return;
-    await _orderService.clientCancelOrder(widget.orderId);
+    await _orderService.clientCancelOrder(widget.orderId, reason: 'user_retry_emergency');
 
     final result = await _orderService.createOrder(
       clientUserId: _currentOrder!.customerId,
       category: _currentOrder!.category,
       location: GeoPoint(widget.clientLocation.latitude, widget.clientLocation.longitude),
       type: app_order.OrderType.emergency,
-      source: app_order.OrderSource.boltSearch,
+      source: app_order.OrderSource.radarSearch,
       targetMasterId: null,
     );
 
@@ -201,7 +198,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
 
   Future<void> _switchToScheduled() async {
     if (_currentOrder == null) return;
-    await _orderService.clientCancelOrder(widget.orderId);
+    await _orderService.clientCancelOrder(widget.orderId, reason: 'user_switch_to_scheduled');
 
     if (mounted) {
       Navigator.pop(context);
@@ -220,7 +217,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
   }
 
   Future<void> _cancelOrder() async {
-    await _orderService.clientCancelOrder(widget.orderId);
+    await _orderService.clientCancelOrder(widget.orderId, reason: 'user_cancel');
     if (mounted) Navigator.pop(context);
   }
 
@@ -257,12 +254,6 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
     });
   }
 
-  Color _getStatusColor(app_order.Order order) {
-    if (order.status == AppConstants.orderStatusArrived) return Colors.purple;
-    if (order.type == app_order.OrderType.scheduled) return Colors.orange;
-    return kPrimaryColor;
-  }
-
   String _getStatusText(app_order.Order order) {
     if (order.status == AppConstants.orderStatusArrived) return "Usta Çatdı";
     if (order.status == AppConstants.orderStatusAccepted) return "Yoldadır";
@@ -279,7 +270,8 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
   @override
   Widget build(BuildContext context) {
     final isPending = _currentOrder?.status == AppConstants.orderStatusPending;
-    final isCancelled = _currentOrder?.status == AppConstants.orderStatusCancelled;
+    final isCancelled = _currentOrder?.status == AppConstants.orderStatusCancelled ||
+        _currentOrder?.status == AppConstants.orderStatusCanceledByMaster;
 
     // Вычисляем оставшееся время для отображения
     final timeLeft = (_currentTimeoutLimit - _searchSeconds).clamp(0, _currentTimeoutLimit);
@@ -305,7 +297,6 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
           GoogleMap(
             mapType: MapType.normal,
             initialCameraPosition: CameraPosition(target: widget.clientLocation, zoom: 15),
-            onMapCreated: (c) => _mapController = c,
             markers: _getMarkers(),
             myLocationEnabled: true,
             myLocationButtonEnabled: false,
@@ -326,12 +317,19 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                       const LinearProgressIndicator(color: kPrimaryColor, backgroundColor: Colors.grey),
                       const SizedBox(height: 15),
                       Text(
-                        _currentOrder?.type == 'scheduled'
+                        _currentOrder?.type == app_order.OrderType.scheduled
                             ? "Planlı sifariş üçün usta axtarılır..."
                             : "Təcili usta axtarılır...",
                         style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: kDarkColor),
                         textAlign: TextAlign.center,
                       ),
+                      if (_currentOrder != null) ...[
+                        const SizedBox(height: 8),
+                        PendingClientSearchSubtitle(
+                          order: _currentOrder!,
+                          style: TextStyle(fontSize: 14, color: Colors.grey.shade800),
+                        ),
+                      ],
                       const SizedBox(height: 5),
                       Text("Gözləmə vaxtı: $timeLeftString", style: const TextStyle(color: Colors.grey)),
                       const SizedBox(height: 15),

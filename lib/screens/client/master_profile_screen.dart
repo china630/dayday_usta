@@ -2,15 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 
-import 'package:bolt_usta/core/app_constants.dart';
-import 'package:bolt_usta/core/app_colors.dart';
-import 'package:bolt_usta/models/master_profile.dart';
-import 'package:bolt_usta/models/review.dart';
-import 'package:bolt_usta/models/order.dart' as app_order;
-import 'package:bolt_usta/services/master_service.dart';
-import 'package:bolt_usta/services/review_service.dart';
-import 'package:bolt_usta/services/order_service.dart';
-import 'package:bolt_usta/screens/client/modals/order_creation_modal.dart';
+import 'package:dayday_usta/core/app_constants.dart';
+import 'package:dayday_usta/core/app_colors.dart';
+import 'package:dayday_usta/models/master_profile.dart';
+import 'package:dayday_usta/models/review.dart';
+import 'package:dayday_usta/models/order.dart' as app_order;
+import 'package:dayday_usta/services/master_service.dart';
+import 'package:dayday_usta/services/review_service.dart';
+import 'package:dayday_usta/services/order_service.dart';
+import 'package:dayday_usta/services/favorites_service.dart';
+import 'package:dayday_usta/screens/client/modals/order_creation_modal.dart';
 
 class MasterProfileScreen extends StatefulWidget {
   final String masterId;
@@ -30,6 +31,7 @@ class _MasterProfileScreenState extends State<MasterProfileScreen> {
   final MasterService _masterService = MasterService();
   final ReviewService _reviewService = ReviewService();
   final OrderService _orderService = OrderService();
+  final FavoritesService _favoritesService = FavoritesService();
 
   MasterProfile? _masterProfile;
   bool _isLoading = true;
@@ -97,12 +99,39 @@ class _MasterProfileScreenState extends State<MasterProfileScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        // ✅ ОБНОВЛЕНО: Фирменный цвет фона, белый текст
         title: const Text("Usta Profili", style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: kPrimaryColor,
         foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
+        actions: [
+          StreamBuilder<List<String>>(
+            stream: _favoritesService.favoriteMasterIdsStream(widget.currentUserId),
+            builder: (context, snap) {
+              final fav = snap.data ?? [];
+              final isFav = fav.contains(widget.masterId);
+              return IconButton(
+                tooltip: 'Seçilmiş ustalar',
+                icon: Icon(isFav ? Icons.favorite : Icons.favorite_border),
+                onPressed: () async {
+                  try {
+                    await _favoritesService.setFavorite(
+                      widget.currentUserId,
+                      widget.masterId,
+                      !isFav,
+                    );
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('$e')),
+                      );
+                    }
+                  }
+                },
+              );
+            },
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         child: Column(

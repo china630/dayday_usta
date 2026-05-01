@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:bolt_usta/models/review.dart'; // ✅ Импортируем модель
+import 'package:dayday_usta/models/review.dart'; // ✅ Импортируем модель
 
 class ReviewService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;

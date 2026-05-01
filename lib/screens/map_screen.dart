@@ -5,12 +5,12 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import 'package:bolt_usta/services/master_search_service.dart';
-import 'package:bolt_usta/services/metadata_service.dart';
-import 'package:bolt_usta/models/master_map_data.dart';
-import 'package:bolt_usta/screens/order_tracking_screen.dart';
-import 'package:bolt_usta/screens/client/modals/order_creation_modal.dart'; // Путь может отличаться в зависимости от вашей структуры
-import 'package:bolt_usta/core/app_colors.dart';
+import 'package:dayday_usta/services/master_search_service.dart';
+import 'package:dayday_usta/services/metadata_service.dart';
+import 'package:dayday_usta/models/master_map_data.dart';
+import 'package:dayday_usta/screens/order_tracking_screen.dart';
+import 'package:dayday_usta/screens/client/modals/order_creation_modal.dart'; // Путь может отличаться в зависимости от вашей структуры
+import 'package:dayday_usta/core/app_colors.dart';
 
 class MapScreen extends StatefulWidget {
   final String currentUserId;

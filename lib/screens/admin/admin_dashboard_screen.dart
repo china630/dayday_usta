@@ -2,16 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import 'package:bolt_usta/core/app_constants.dart';
-import 'package:bolt_usta/core/app_colors.dart';
-import 'package:bolt_usta/models/master_profile.dart';
-import 'package:bolt_usta/services/admin_service.dart';
-import 'package:bolt_usta/services/order_service.dart';
-import 'package:bolt_usta/services/auth_service.dart';
-import 'package:bolt_usta/screens/admin/admin_verification_screen.dart';
-import 'package:bolt_usta/screens/auth/auth_screen.dart';
+import 'package:dayday_usta/core/app_constants.dart';
+import 'package:dayday_usta/core/app_colors.dart';
+import 'package:dayday_usta/models/master_profile.dart';
+import 'package:dayday_usta/services/admin_service.dart';
+import 'package:dayday_usta/services/order_service.dart';
+import 'package:dayday_usta/services/auth_service.dart';
+import 'package:dayday_usta/screens/admin/admin_verification_screen.dart';
+import 'package:dayday_usta/screens/auth/auth_screen.dart';
 // ✅ ИСПРАВЛЕН ИМПОРТ (добавлена точка с запятой)
-import 'package:bolt_usta/screens/debug/debug_log_screen.dart';
+import 'package:dayday_usta/screens/debug/debug_log_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   final String currentUserId;

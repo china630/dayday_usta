@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:bolt_usta/core/app_colors.dart';
-import 'package:bolt_usta/screens/auth/otp_verification_screen.dart';
+import 'package:dayday_usta/core/app_colors.dart';
+import 'package:dayday_usta/screens/auth/otp_verification_screen.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -30,11 +30,8 @@ class _AuthScreenState extends State<AuthScreen> {
       return;
     }
 
-    // Логика форматирования: если пользователь не ввел "+", добавляем "+" в начало
-    // (Пользователь может ввести полный номер с кодом страны)
     String formattedPhone = phone;
     if (!phone.startsWith('+')) {
-      // Если ввели без плюса, считаем что это просто цифры, добавляем плюс
       formattedPhone = '+$phone';
     }
 
@@ -86,20 +83,23 @@ class _AuthScreenState extends State<AuthScreen> {
             children: [
               const SizedBox(height: 20),
 
-              // 1. ЛОГОТИП И НАЗВАНИЕ (СЛЕВА ВВЕРХУ)
+              // ✅ 1. ЛОГОТИП И НОВОЕ НАЗВАНИЕ
               Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: kPrimaryColor.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.bolt, size: 24, color: kPrimaryColor),
+                  // Логотип (убедись, что файл assets/images/logo.png существует)
+                  // Если файла пока нет, код не упадет, но покажет ошибку в консоли.
+                  // Можно временно закомментировать Image.asset и раскомментировать Icon ниже.
+                  Image.asset(
+                    'assets/images/logo.png',
+                    height: 40,
+                    errorBuilder: (context, error, stackTrace) {
+                      // Запасной вариант, если картинки нет
+                      return const Icon(Icons.handyman, size: 40, color: kPrimaryColor);
+                    },
                   ),
                   const SizedBox(width: 12),
                   const Text(
-                    "Bolt Usta",
+                    "DayDay Usta", // ✅ Новое название
                     style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
@@ -110,7 +110,6 @@ class _AuthScreenState extends State<AuthScreen> {
                 ],
               ),
 
-              // Отступ, чтобы контент был чуть выше центра
               const SizedBox(height: 60),
 
               // 2. ЗАГОЛОВОК
@@ -126,7 +125,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
               const SizedBox(height: 40),
 
-              // 3. ПОЛЕ ВВОДА (БЕЗ МАСКИ)
+              // 3. ПОЛЕ ВВОДА
               const Text("Telefon nömrəsi", style: TextStyle(fontWeight: FontWeight.w600, color: kDarkColor)),
               const SizedBox(height: 8),
               TextField(
@@ -134,8 +133,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 keyboardType: TextInputType.phone,
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 decoration: InputDecoration(
-                  // Убрали prefixText
-                  hintText: "+994 55 123 45 67", // Пример ввода
+                  hintText: "+994 55 123 45 67",
                   hintStyle: TextStyle(color: Colors.grey[400], fontWeight: FontWeight.normal),
                   filled: true,
                   fillColor: Colors.grey[50],
@@ -157,7 +155,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
               const SizedBox(height: 30),
 
-              // 4. КНОПКА (ПРИМЕРНО ПО СЕРЕДИНЕ ЭКРАНА)
+              // 4. КНОПКА
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -165,9 +163,9 @@ class _AuthScreenState extends State<AuthScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: kPrimaryColor,
                     disabledBackgroundColor: Colors.grey[300],
-                    padding: const EdgeInsets.symmetric(vertical: 18), // Чуть выше кнопка
+                    padding: const EdgeInsets.symmetric(vertical: 18),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    elevation: 0, // Плоский стиль
+                    elevation: 0,
                   ),
                   child: _isLoading
                       ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
@@ -178,7 +176,6 @@ class _AuthScreenState extends State<AuthScreen> {
                 ),
               ),
 
-              // Spacer толкает всё вверх, оставляя пустое место внизу
               const Spacer(),
             ],
           ),

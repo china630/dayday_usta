@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:bolt_usta/core/app_constants.dart';
-import 'package:bolt_usta/core/app_colors.dart'; // ✅ Цвета
-import 'package:bolt_usta/models/order.dart' as app_order;
-import 'package:bolt_usta/services/order_service.dart';
-import 'package:bolt_usta/screens/order_detail_screen.dart';
-import 'package:bolt_usta/screens/master/master_active_order_screen.dart';
+import 'package:dayday_usta/core/app_constants.dart';
+import 'package:dayday_usta/core/app_colors.dart'; // ✅ Цвета
+import 'package:dayday_usta/models/order.dart' as app_order;
+import 'package:dayday_usta/services/order_service.dart';
+import 'package:dayday_usta/screens/order_detail_screen.dart';
+import 'package:dayday_usta/screens/master/master_active_order_screen.dart';
 
 class MasterOrderHistoryScreen extends StatelessWidget {
   final String masterId;
@@ -108,6 +108,8 @@ class _OrderList extends StatelessWidget {
         statusText = "Tamamlandı"; statusColor = Colors.green; bgColor = Colors.green.withOpacity(0.1); break;
       case AppConstants.orderStatusCancelled:
         statusText = "Ləğv edildi"; statusColor = Colors.red; bgColor = Colors.red.withOpacity(0.1); break;
+      case AppConstants.orderStatusCanceledByMaster:
+        statusText = "Usta ləğv etdi"; statusColor = Colors.red; bgColor = Colors.red.withOpacity(0.1); break;
       default:
         statusText = order.status; statusColor = Colors.grey; bgColor = Colors.grey.withOpacity(0.1);
     }

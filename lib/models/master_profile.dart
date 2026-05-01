@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:bolt_usta/models/user_profile.dart';
-import 'package:bolt_usta/core/app_constants.dart';
+import 'package:dayday_usta/models/user_profile.dart';
+import 'package:dayday_usta/core/app_constants.dart';
 
 class MasterProfile extends UserProfile {
   final List<String> categories;
@@ -22,6 +22,10 @@ class MasterProfile extends UserProfile {
     required String name,
     required String surname,
     String? fcmToken,
+    double balance = 0.0,
+    double frozenBalance = 0.0,
+    List<String> favoriteMasterIds = const [],
+
     // Мастер-специфичные поля
     required this.categories,
     required this.districts,
@@ -41,12 +45,15 @@ class MasterProfile extends UserProfile {
     name: name,
     surname: surname,
     fcmToken: fcmToken,
+    balance: balance,
+    frozenBalance: frozenBalance,
+    favoriteMasterIds: favoriteMasterIds,
   );
 
-  // ✅ Исправленный toFirestore (объединяет данные родителя и свои)
+  // ✅ Исправленный toFirestore
   @override
   Map<String, dynamic> toFirestore() {
-    final baseData = super.toFirestore(); // Берем данные UserProfile
+    final baseData = super.toFirestore(); // Тут уже будут balance и frozenBalance
 
     return {
       ...baseData, // Разворачиваем базовые данные
@@ -74,6 +81,10 @@ class MasterProfile extends UserProfile {
       surname: data['surname'] ?? '',
       fcmToken: data['fcmToken'],
 
+      // 💰 Читаем баланс
+      balance: (data['balance'] ?? 0).toDouble(),
+      frozenBalance: (data['frozenBalance'] ?? 0).toDouble(),
+
       categories: List<String>.from(data['categories'] ?? []),
       districts: List<String>.from(data['districts'] ?? []),
       status: data['status'] ?? AppConstants.masterStatusUnavailable,
@@ -84,6 +95,7 @@ class MasterProfile extends UserProfile {
       viewsCount: data['viewsCount'] ?? 0,
       callsCount: data['callsCount'] ?? 0,
       savesCount: data['savesCount'] ?? 0,
+      favoriteMasterIds: List<String>.from(data['favoriteMasterIds'] ?? []),
     );
   }
 }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:bolt_usta/core/app_colors.dart';
-import 'package:bolt_usta/services/review_service.dart';
+import 'package:dayday_usta/core/app_colors.dart';
+import 'package:dayday_usta/services/review_service.dart';
 
 class RateMasterModal extends StatefulWidget {
   final String orderId;
@@ -51,16 +51,14 @@ class _RateMasterModalState extends State<RateMasterModal> {
 
   @override
   Widget build(BuildContext context) {
+    final bottomPad = MediaQuery.of(context).viewPadding.bottom +
+        MediaQuery.of(context).viewInsets.bottom +
+        20;
     return Container(
-      padding: EdgeInsets.only(
-          top: 20,
-          left: 20,
-          right: 20,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 20
-      ),
+      padding: EdgeInsets.only(top: 20, left: 20, right: 20, bottom: bottomPad),
       decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       // ✅ ИСПРАВЛЕНО: mainAxisSize убрано из Container
       child: Column(

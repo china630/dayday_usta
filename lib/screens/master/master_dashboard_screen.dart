@@ -8,20 +8,25 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-import 'package:bolt_usta/core/app_constants.dart';
-import 'package:bolt_usta/core/app_colors.dart';
-import 'package:bolt_usta/models/master_profile.dart';
-import 'package:bolt_usta/services/auth_service.dart';
-import 'package:bolt_usta/services/master_service.dart';
-import 'package:bolt_usta/services/logger_service.dart';
-import 'package:bolt_usta/managers/location_manager.dart';
+import 'package:dayday_usta/core/app_constants.dart';
+import 'package:dayday_usta/core/app_colors.dart';
+import 'package:dayday_usta/models/master_profile.dart';
+import 'package:dayday_usta/services/auth_service.dart';
+import 'package:dayday_usta/services/master_service.dart';
+import 'package:dayday_usta/services/logger_service.dart';
+import 'package:dayday_usta/managers/location_manager.dart';
 
-import 'package:bolt_usta/screens/master/profile_editor_screen.dart';
-import 'package:bolt_usta/screens/master/master_order_history_screen.dart';
-import 'package:bolt_usta/screens/master/modals/accept_order_modal.dart';
-import 'package:bolt_usta/screens/auth/auth_screen.dart';
-import 'package:bolt_usta/screens/master/master_verification_screen.dart';
-import 'package:bolt_usta/screens/debug/debug_log_screen.dart';
+import 'package:dayday_usta/screens/master/profile_editor_screen.dart';
+import 'package:dayday_usta/screens/master/master_order_history_screen.dart';
+import 'package:dayday_usta/screens/master/modals/accept_order_modal.dart';
+import 'package:dayday_usta/screens/auth/auth_screen.dart';
+import 'package:dayday_usta/screens/master/master_verification_screen.dart';
+import 'package:dayday_usta/screens/debug/debug_log_screen.dart';
+
+// 💰 ИМПОРТЫ ДЛЯ ФИНАНСОВ
+import '../../widgets/balance_card.dart';
+import '../payment/payment_instruction_screen.dart';
+import '../payment/transaction_history_screen.dart'; // ✅ Добавил импорт
 
 enum StatPeriod { today, week, month, allTime }
 
@@ -51,14 +56,13 @@ class _MasterDashboardScreenState extends State<MasterDashboardScreen> with Widg
 
   StatPeriod _selectedPeriod = StatPeriod.today;
   Map<String, int> _stats = {'emergency': 0, 'scheduled': 0, 'cancelled': 0};
+  /// Сумма списанной комиссии за локальный календарный день (по `transactions`, тип `payment`, amount < 0).
+  double _todayCommissionPaid = 0;
 
   StreamSubscription<DocumentSnapshot>? _profileSubscription;
   StreamSubscription<QuerySnapshot>? _incomingOrdersSubscription;
 
-  // ✅ 1. ID заказа, который сейчас открыт в модальном окне (чтобы скрыть оверлей)
   String? _currentlyShowingOrderId;
-
-  // ✅ 2. Список заказов, которые мастер отклонил (нажал крестик/отмена)
   final Set<String> _ignoredOrderIds = {};
 
   bool get isOnline {
@@ -75,6 +79,7 @@ class _MasterDashboardScreenState extends State<MasterDashboardScreen> with Widg
     _locationManager = Provider.of<LocationManager>(context, listen: false);
     _initLocationManager();
     _calculateStats();
+    _refreshTodayCommissionFromTx();
     _startProfileListening();
 
     if (isOnline) {
@@ -133,6 +138,8 @@ class _MasterDashboardScreenState extends State<MasterDashboardScreen> with Widg
         setState(() => _currentProfile = updatedProfile);
         final bool nowOnline = isOnline;
 
+        _refreshTodayCommissionFromTx();
+
         if (nowOnline && !wasOnline) {
           _locationManager.startTracking();
           _startListeningForOrders();
@@ -160,7 +167,6 @@ class _MasterDashboardScreenState extends State<MasterDashboardScreen> with Widg
         final data = doc.data();
         final orderId = doc.id;
 
-        // ✅ Пропускаем отклоненные заказы
         if (_ignoredOrderIds.contains(orderId)) continue;
 
         final type = data['type'];
@@ -169,12 +175,10 @@ class _MasterDashboardScreenState extends State<MasterDashboardScreen> with Widg
 
         bool shouldNotify = false;
 
-        // 1. Прямой заказ (Срочный или Плановый)
         if (targetMasterId == widget.masterId) {
           shouldNotify = true;
           Log.i("🔔 Прямой заказ найден: $orderId");
         }
-        // 2. Срочный или Плановый общий заказ
         else if (targetMasterId == null && (type == 'emergency' || type == 'scheduled')) {
           if (_currentProfile != null && _currentProfile!.categories.contains(category)) {
             shouldNotify = true;
@@ -182,10 +186,8 @@ class _MasterDashboardScreenState extends State<MasterDashboardScreen> with Widg
           }
         }
 
-        // 🛑 УБРАЛИ АВТО-ОТКРЫТИЕ ОКНА
-        // Теперь окно открывается ТОЛЬКО по нажатию кнопки в шторке.
         if (shouldNotify) {
-          // Можно добавить звук/вибрацию здесь
+          // Звук/вибрация
         }
       }
     },
@@ -212,7 +214,6 @@ class _MasterDashboardScreenState extends State<MasterDashboardScreen> with Widg
     }
   }
 
-  // ✅ Метод для открытия окна (вызывается кнопкой "BAX")
   Future<void> _handleNotificationOpen(String orderId) async {
     if (_currentlyShowingOrderId == orderId) return;
 
@@ -231,12 +232,10 @@ class _MasterDashboardScreenState extends State<MasterDashboardScreen> with Widg
       try { dist = _calculateDistance(clientLoc); } catch (_) {}
 
       if (mounted) {
-        // 1. Скрываем шторку
         setState(() {
           _currentlyShowingOrderId = orderId;
         });
 
-        // 2. Открываем окно
         await showModalBottomSheet(
           context: context,
           isScrollControlled: true,
@@ -252,7 +251,6 @@ class _MasterDashboardScreenState extends State<MasterDashboardScreen> with Widg
           ),
         );
 
-        // 3. Возвращаем шторку (если заказ не был принят)
         if (mounted) {
           setState(() {
             _currentlyShowingOrderId = null;
@@ -267,7 +265,6 @@ class _MasterDashboardScreenState extends State<MasterDashboardScreen> with Widg
     }
   }
 
-  // ✅ Метод для кнопки "IMTINA" (Добавляет в игнор)
   void _ignoreOrder(String orderId) {
     setState(() {
       _ignoredOrderIds.add(orderId);
@@ -275,6 +272,39 @@ class _MasterDashboardScreenState extends State<MasterDashboardScreen> with Widg
   }
 
   Future<void> _toggleStatus(bool value) async {
+    if (value == true) {
+      final double balance = _currentProfile?.balance ?? 0.0;
+      final double frozen = _currentProfile?.frozenBalance ?? 0.0;
+      final double available = balance - frozen;
+
+      if (available < 4.0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              'Balansınız azdır! Sifariş qəbul etmək üçün artırın.',
+              style: TextStyle(color: Colors.white),
+            ),
+            backgroundColor: Colors.red,
+            action: SnackBarAction(
+              label: 'Artır',
+              textColor: Colors.white,
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PaymentInstructionScreen(
+                      userPhoneNumber: _currentProfile?.phoneNumber ?? '',
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
     try {
       await _masterService.toggleMasterStatus(widget.masterId, value);
     } catch (e) {
@@ -316,7 +346,11 @@ class _MasterDashboardScreenState extends State<MasterDashboardScreen> with Widg
   Future<void> _calculateStats() async {
     final query = FirebaseFirestore.instance.collection('orders')
         .where('masterId', isEqualTo: widget.masterId)
-        .where('status', whereIn: [AppConstants.orderStatusCompleted, AppConstants.orderStatusCancelled]);
+        .where('status', whereIn: [
+          AppConstants.orderStatusCompleted,
+          AppConstants.orderStatusCancelled,
+          AppConstants.orderStatusCanceledByMaster,
+        ]);
 
     final snapshot = await query.get();
     int emergency = 0; int scheduled = 0; int cancelled = 0;
@@ -337,7 +371,10 @@ class _MasterDashboardScreenState extends State<MasterDashboardScreen> with Widg
 
       final status = data['status'];
       final type = data['type'];
-      if (status == AppConstants.orderStatusCancelled) cancelled++;
+      if (status == AppConstants.orderStatusCancelled ||
+          status == AppConstants.orderStatusCanceledByMaster) {
+        cancelled++;
+      }
       else if (status == AppConstants.orderStatusCompleted) {
         if (type == 'emergency') emergency++; else scheduled++;
       }
@@ -346,9 +383,31 @@ class _MasterDashboardScreenState extends State<MasterDashboardScreen> with Widg
     if (mounted) setState(() => _stats = {'emergency': emergency, 'scheduled': scheduled, 'cancelled': cancelled});
   }
 
-  // ---------------------------------------------------------------------------
-  // UI СТРУКТУРА
-  // ---------------------------------------------------------------------------
+  Future<void> _refreshTodayCommissionFromTx() async {
+    final start = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('transactions')
+          .where('userId', isEqualTo: widget.masterId)
+          .orderBy('createdAt', descending: true)
+          .limit(120)
+          .get();
+      double paid = 0;
+      for (final d in snap.docs) {
+        final data = d.data();
+        final ts = data['createdAt'];
+        if (ts is! Timestamp) continue;
+        if (ts.toDate().isBefore(start)) break;
+        if (data['type'] == 'payment') {
+          final a = (data['amount'] as num?)?.toDouble() ?? 0;
+          if (a < 0) paid -= a;
+        }
+      }
+      if (mounted) setState(() => _todayCommissionPaid = paid);
+    } catch (_) {
+      if (mounted) setState(() => _todayCommissionPaid = 0);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -428,7 +487,7 @@ class _MasterDashboardScreenState extends State<MasterDashboardScreen> with Widg
             padding: const EdgeInsets.only(bottom: 120),
             child: Column(
               children: [
-                // Шапка (без изменений)
+                // Шапка (Профиль и Статус)
                 Container(
                   padding: const EdgeInsets.fromLTRB(20, 10, 20, 30),
                   decoration: const BoxDecoration(
@@ -525,9 +584,64 @@ class _MasterDashboardScreenState extends State<MasterDashboardScreen> with Widg
                   ),
                 ),
 
-                // Статистика (без изменений)
+                // 💰 КАРТОЧКА БАЛАНСА
                 Padding(
-                  padding: const EdgeInsets.all(20.0),
+                  padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 15.0),
+                  child: BalanceCard(
+                    balance: _currentProfile?.balance ?? 0.0,
+                    frozenBalance: _currentProfile?.frozenBalance ?? 0.0,
+                    onTopUpPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PaymentInstructionScreen(
+                            userPhoneNumber: _currentProfile?.phoneNumber ?? '',
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(color: Colors.grey.withOpacity(0.08), blurRadius: 10, offset: const Offset(0, 4)),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.payments_outlined, color: kPrimaryColor, size: 28),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Bu gün ödənilmiş komissiya',
+                                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                              ),
+                              Text(
+                                '${NumberFormat('#0.00').format(_todayCommissionPaid)} AZN',
+                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: kDarkColor),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Статистика
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20.0),
                   child: Column(
                     children: [
                       _buildStatsHeader(),
@@ -553,7 +667,8 @@ class _MasterDashboardScreenState extends State<MasterDashboardScreen> with Widg
                   ),
                 ),
 
-                const Divider(height: 1, thickness: 1, color: Color(0xFFEEEEEE)),
+                const SizedBox(height: 20),
+                Divider(height: 1, thickness: 1, color: Colors.grey.shade300),
 
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
@@ -586,7 +701,6 @@ class _MasterDashboardScreenState extends State<MasterDashboardScreen> with Widg
             ),
           ),
 
-          // ✅ ОВЕРЛЕЙ: Передаем все необходимые параметры
           if (isOnline)
             IncomingOrderOverlay(
               masterId: widget.masterId,
@@ -626,6 +740,7 @@ class _MasterDashboardScreenState extends State<MasterDashboardScreen> with Widg
                 if (newValue != null) {
                   setState(() => _selectedPeriod = newValue);
                   _calculateStats();
+                  _refreshTodayCommissionFromTx();
                 }
               },
             ),
@@ -662,7 +777,7 @@ class _MasterDashboardScreenState extends State<MasterDashboardScreen> with Widg
     );
   }
 
-  // --- TAB 3: PROFILE ---
+  // --- TAB 3: PROFILE (ЗДЕСЬ ДОБАВЛЕНА КНОПКА) ---
   Widget _buildProfileTab() {
     return Scaffold(
       backgroundColor: kBackgroundColor,
@@ -676,13 +791,32 @@ class _MasterDashboardScreenState extends State<MasterDashboardScreen> with Widg
             Text(_currentProfile?.fullName ?? "Usta", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: kDarkColor)),
             Text(_currentProfile?.phoneNumber ?? "", style: const TextStyle(fontSize: 16, color: Colors.grey)),
             const SizedBox(height: 30),
+
             _buildProfileOption(icon: Icons.edit, text: "Profili Redaktə Et", onTap: () async {
               final freshProfile = await _masterService.getProfileData(widget.masterId);
               if (freshProfile != null) {
                 await Navigator.push(context, MaterialPageRoute(builder: (_) => ProfileEditorScreen(initialProfile: freshProfile)));
               }
             }),
+
             _buildProfileOption(icon: Icons.verified_user, text: "Verifikasiya Statusu", onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MasterVerificationScreen(masterId: widget.masterId)))),
+
+            // ✅ КНОПКА ИСТОРИИ (ДОБАВЛЕНА)
+            _buildProfileOption(
+              icon: Icons.receipt_long,
+              text: "Ödəniş Tarixçəsi",
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => TransactionHistoryScreen(
+                      userId: widget.masterId,
+                    ),
+                  ),
+                );
+              },
+            ),
+
             const SizedBox(height: 20),
             SizedBox(width: double.infinity, child: TextButton.icon(onPressed: _signOut, icon: const Icon(Icons.logout, color: Colors.red), label: const Text("Hesabdan Çıx", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 16)), style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 15), backgroundColor: Colors.red.withOpacity(0.1), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))))),
           ],
@@ -731,7 +865,6 @@ class IncomingOrderOverlay extends StatelessWidget {
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return const SizedBox();
 
         final myOrders = snapshot.data!.docs.where((doc) {
-          // Если заказ открыт в окне или отклонен - не показываем
           if (doc.id == blockedOrderId) return false;
           if (ignoredOrderIds.contains(doc.id)) return false;
 
@@ -742,7 +875,6 @@ class IncomingOrderOverlay extends StatelessWidget {
 
           if (targetId == masterId) return true;
 
-          // ✅ Теперь показывает и Срочные, и Плановые
           if (targetId == null &&
               (orderType == 'emergency' || orderType == 'scheduled') &&
               myCategories.contains(orderCategory)) {
@@ -844,7 +976,6 @@ class IncomingOrderOverlay extends StatelessWidget {
                     width: double.infinity,
                     child: Row(
                       children: [
-                        // Кнопка ОТКАЗА
                         Expanded(
                           child: OutlinedButton(
                             onPressed: () => onReject(orderId),
@@ -857,7 +988,6 @@ class IncomingOrderOverlay extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 10),
-                        // Кнопка ПРОСМОТРА
                         Expanded(
                           child: ElevatedButton(
                               style: ElevatedButton.styleFrom(

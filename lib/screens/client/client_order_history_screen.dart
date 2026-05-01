@@ -1,22 +1,58 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:bolt_usta/core/app_constants.dart';
-import 'package:bolt_usta/core/app_colors.dart'; // ✅ Цвета
-import 'package:bolt_usta/models/order.dart' as app_order;
-import 'package:bolt_usta/services/order_service.dart';
-import 'package:bolt_usta/screens/order_detail_screen.dart';
-import 'package:bolt_usta/screens/order_tracking_screen.dart';
+import 'package:dayday_usta/core/app_constants.dart';
+import 'package:dayday_usta/core/app_colors.dart';
+import 'package:dayday_usta/models/order.dart' as app_order;
+import 'package:dayday_usta/services/order_service.dart';
+import 'package:dayday_usta/screens/order_detail_screen.dart';
+import 'package:dayday_usta/screens/order_tracking_screen.dart';
 
-class ClientOrderHistoryScreen extends StatelessWidget {
+class ClientOrderHistoryScreen extends StatefulWidget {
   final String customerId;
 
   const ClientOrderHistoryScreen({required this.customerId, super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final OrderService _orderService = OrderService();
+  State<ClientOrderHistoryScreen> createState() => _ClientOrderHistoryScreenState();
+}
 
+class _ClientOrderHistoryScreenState extends State<ClientOrderHistoryScreen> {
+  final OrderService _orderService = OrderService();
+  bool _repeatBusy = false;
+
+  Future<void> _repeatOrder(BuildContext context, app_order.Order order) async {
+    if (_repeatBusy) return;
+    setState(() => _repeatBusy = true);
+    try {
+      final r = await _orderService.repeatOrderFromTemplate(
+        clientUserId: widget.customerId,
+        template: order,
+      );
+      final id = r['orderId'] as String?;
+      if (!context.mounted || id == null || id.isEmpty) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => OrderTrackingScreen(
+            orderId: id,
+            masterId: null,
+            clientLocation: LatLng(order.clientLocation.latitude, order.clientLocation.longitude),
+          ),
+        ),
+      );
+    } catch (e) {
+      final msg = e is Exception ? e.toString().replaceFirst('Exception: ', '') : '$e';
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      }
+    } finally {
+      if (mounted) setState(() => _repeatBusy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: kBackgroundColor,
       appBar: AppBar(
@@ -25,10 +61,10 @@ class ClientOrderHistoryScreen extends StatelessWidget {
         foregroundColor: Colors.white,
         centerTitle: true,
         elevation: 0,
-        automaticallyImplyLeading: false, // Убираем стрелку назад, так как это таб
+        automaticallyImplyLeading: false,
       ),
       body: StreamBuilder<List<app_order.Order>>(
-        stream: _orderService.getClientOrderHistory(customerId),
+        stream: _orderService.getClientOrderHistory(widget.customerId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -65,7 +101,6 @@ class ClientOrderHistoryScreen extends StatelessWidget {
   }
 
   Widget _buildOrderItem(BuildContext context, app_order.Order order) {
-    // Настройка цветов и текста статуса
     Color statusColor;
     String statusText;
     Color bgColor;
@@ -96,6 +131,11 @@ class ClientOrderHistoryScreen extends StatelessWidget {
         statusColor = Colors.red[800]!;
         bgColor = Colors.red[50]!;
         break;
+      case AppConstants.orderStatusCanceledByMaster:
+        statusText = "Usta ləğv etdi";
+        statusColor = Colors.red[800]!;
+        bgColor = Colors.red[50]!;
+        break;
       default:
         statusText = order.status;
         statusColor = Colors.grey[800]!;
@@ -104,95 +144,123 @@ class ClientOrderHistoryScreen extends StatelessWidget {
 
     final dateStr = DateFormat('dd.MM.yyyy • HH:mm').format(order.createdAt);
     final isEmergency = order.type == app_order.OrderType.emergency;
+    final showRepeat = order.status == AppConstants.orderStatusCompleted;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       elevation: 0,
       color: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () {
-          // Логика навигации: Активные -> Трекинг, Завершенные -> Детали
-          if (order.status == AppConstants.orderStatusPending ||
-              order.status == AppConstants.orderStatusAccepted ||
-              order.status == AppConstants.orderStatusArrived) {
-
-            Navigator.push(context, MaterialPageRoute(
-                builder: (_) => OrderTrackingScreen(
-                    orderId: order.id,
-                    masterId: order.masterId,
-                    clientLocation: LatLng(order.clientLocation.latitude, order.clientLocation.longitude)
-                )
-            ));
-          } else {
-            Navigator.push(context, MaterialPageRoute(
-                builder: (_) => OrderDetailScreen(order: order, isClient: true)
-            ));
-          }
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        children: [
+          InkWell(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            onTap: () {
+              if (order.status == AppConstants.orderStatusPending ||
+                  order.status == AppConstants.orderStatusAccepted ||
+                  order.status == AppConstants.orderStatusArrived) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => OrderTrackingScreen(
+                      orderId: order.id,
+                      masterId: order.masterId,
+                      clientLocation: LatLng(order.clientLocation.latitude, order.clientLocation.longitude),
+                    ),
+                  ),
+                );
+              } else {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => OrderDetailScreen(order: order, isClient: true),
+                  ),
+                );
+              }
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Иконка и Категория
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: kPrimaryColor.withOpacity(0.1),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          isEmergency ? Icons.flash_on : Icons.calendar_today,
-                          color: kPrimaryColor,
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      Row(
                         children: [
-                          Text(order.category, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: kDarkColor)),
-                          Text(isEmergency ? "Təcili sifariş" : "Planlı sifariş", style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: kPrimaryColor.withOpacity(0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              isEmergency ? Icons.flash_on : Icons.calendar_today,
+                              color: kPrimaryColor,
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(order.category,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold, fontSize: 16, color: kDarkColor)),
+                              Text(isEmergency ? "Təcili sifariş" : "Planlı sifariş",
+                                  style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+                            ],
+                          ),
                         ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: bgColor,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          statusText,
+                          style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
                       ),
                     ],
                   ),
-                  // Статус (Бейдж)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: bgColor,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      statusText,
-                      style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 12),
-                    ),
+                  const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider(height: 1)),
+                  Row(
+                    children: [
+                      Icon(Icons.access_time, size: 16, color: Colors.grey[400]),
+                      const SizedBox(width: 6),
+                      Text(dateStr,
+                          style: TextStyle(color: Colors.grey[600], fontSize: 13, fontWeight: FontWeight.w500)),
+                      const Spacer(),
+                      const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
+                    ],
                   ),
                 ],
               ),
-
-              const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider(height: 1)),
-
-              Row(
-                children: [
-                  Icon(Icons.access_time, size: 16, color: Colors.grey[400]),
-                  const SizedBox(width: 6),
-                  Text(dateStr, style: TextStyle(color: Colors.grey[600], fontSize: 13, fontWeight: FontWeight.w500)),
-                  const Spacer(),
-                  const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
-                ],
-              )
-            ],
+            ),
           ),
-        ),
+          if (showRepeat)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _repeatBusy ? null : () => _repeatOrder(context, order),
+                  icon: _repeatBusy
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.replay, size: 18),
+                  label: const Text('Yenidən sifariş'),
+                  style: OutlinedButton.styleFrom(foregroundColor: kPrimaryColor),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.bolt_usta"
+    namespace = "com.example.dayday_usta"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -22,7 +22,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.bolt_usta"
+        applicationId = "com.example.dayday_usta"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

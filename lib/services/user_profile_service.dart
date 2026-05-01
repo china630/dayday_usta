@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:bolt_usta/models/user_profile.dart';
-import 'package:bolt_usta/models/master_profile.dart'; // ✅ Импортируем MasterProfile
+import 'package:dayday_usta/models/user_profile.dart';
+import 'package:dayday_usta/models/master_profile.dart'; // ✅ Импортируем MasterProfile
 
 class UserProfileService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;

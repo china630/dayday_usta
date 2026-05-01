@@ -63,6 +63,6 @@ class DefaultFirebaseOptions {
     messagingSenderId: '57376175407',
     projectId: 'bolt-usta-app',
     storageBucket: 'bolt-usta-app.firebasestorage.app',
-    iosBundleId: 'com.example.boltUsta',
+    iosBundleId: 'com.example.daydayUsta',
   );
 }

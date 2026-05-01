@@ -1,12 +1,12 @@
 // Файл: lib/screens/client/emergency_call_screen.dart
 
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart'; // ✅ Важный импорт
-import 'package:bolt_usta/core/app_constants.dart';
-import 'package:bolt_usta/services/order_service.dart';
-import 'package:bolt_usta/screens/client/active_order_screen.dart'; // Проверь этот путь
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:dayday_usta/core/app_constants.dart';
+import 'package:dayday_usta/services/order_service.dart';
+import 'package:dayday_usta/services/metadata_service.dart';
+import 'package:dayday_usta/screens/client/active_order_screen.dart'; // Проверь этот путь
 import 'dart:async';
 
 class EmergencyCallScreen extends StatefulWidget {
@@ -20,6 +20,8 @@ class EmergencyCallScreen extends StatefulWidget {
 
 class _EmergencyCallScreenState extends State<EmergencyCallScreen> {
   final OrderService _orderService = OrderService();
+  final MetadataService _metadataService = MetadataService();
+  List<String> _categories = List<String>.from(AppConstants.fallbackServiceCategories);
   String? _selectedCategory;
   final TextEditingController _descriptionController = TextEditingController();
   bool _isLoading = false;
@@ -29,8 +31,22 @@ class _EmergencyCallScreenState extends State<EmergencyCallScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _determinePosition();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _loadCategories();
+      if (mounted) _determinePosition();
+    });
+  }
+
+  Future<void> _loadCategories() async {
+    final fromDb = await _metadataService.getCategories();
+    if (!mounted) return;
+    setState(() {
+      if (fromDb.isNotEmpty) {
+        _categories = fromDb;
+        if (_selectedCategory != null && !_categories.contains(_selectedCategory)) {
+          _selectedCategory = null;
+        }
+      }
     });
   }
 
@@ -124,7 +140,8 @@ class _EmergencyCallScreenState extends State<EmergencyCallScreen> {
       final orderId = await _orderService.initiateEmergencyOrder(
         clientUserId: widget.customerId,
         category: _selectedCategory!,
-        clientLocation: clientLatLng,
+        latitude: clientLatLng.latitude,
+        longitude: clientLatLng.longitude,
       );
 
       print("DEBUG: Cloud Function успешно отработала. Order ID: $orderId");
@@ -167,7 +184,9 @@ class _EmergencyCallScreenState extends State<EmergencyCallScreen> {
             DropdownButtonFormField<String>(
               hint: const Text('Seçin'),
               value: _selectedCategory,
-              items: AppConstants.serviceCategories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+              items: _categories
+                  .map((c) => DropdownMenuItem<String>(value: c, child: Text(c)))
+                  .toList(),
               onChanged: (v) => setState(() => _selectedCategory = v),
             ),
             const SizedBox(height: 20),

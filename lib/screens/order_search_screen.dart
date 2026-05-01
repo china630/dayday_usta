@@ -3,11 +3,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:bolt_usta/services/order_service.dart';
-import 'package:bolt_usta/core/app_constants.dart';
-import 'package:bolt_usta/models/order.dart' as app_order; // Модель заказа
-// НОВЫЙ ИМПОРТ: Для перехода на экран отслеживания
+import 'package:dayday_usta/services/order_service.dart';
+import 'package:dayday_usta/core/app_constants.dart';
+import 'package:dayday_usta/core/app_colors.dart';
+import 'package:dayday_usta/models/order.dart' as app_order;
 import 'order_tracking_screen.dart';
+import 'package:dayday_usta/widgets/pending_client_search_subtitle.dart';
+import 'package:dayday_usta/services/category_metrics_service.dart';
 
 class OrderSearchScreen extends StatefulWidget {
   final String clientUserId;
@@ -29,6 +31,7 @@ class _OrderSearchScreenState extends State<OrderSearchScreen> {
   final OrderService _orderService = OrderService();
   String? _orderId;
   String? _masterId;
+  app_order.Order? _currentOrder;
 
   // E1.1: Таймер поиска
   int _searchTimeElapsed = 0;
@@ -53,10 +56,16 @@ class _OrderSearchScreenState extends State<OrderSearchScreen> {
 
   // E1.1: Запуск поиска, таймера и подписки
   void _startSearch() async {
+    _searchTimer?.cancel();
+    _searchTimer = null;
+    await _orderSubscription?.cancel();
+    _orderSubscription = null;
+
     setState(() {
       _searchTimeElapsed = 0;
       _searchFailed = false;
       _masterId = null;
+      _currentOrder = null;
     });
 
     // 1. Инициировать заказ на бэкенде
@@ -64,7 +73,8 @@ class _OrderSearchScreenState extends State<OrderSearchScreen> {
       final id = await _orderService.initiateEmergencyOrder(
         clientUserId: widget.clientUserId,
         category: widget.category,
-        clientLocation: widget.clientLocation,
+        latitude: widget.clientLocation.latitude,
+        longitude: widget.clientLocation.longitude,
       );
       if(mounted) {
         setState(() => _orderId = id);
@@ -95,21 +105,28 @@ class _OrderSearchScreenState extends State<OrderSearchScreen> {
     }
   }
 
-  // Обработка потока статуса заказа
+  // Обработка потока статуса заказа (в т.ч. searchMeta с сервера)
   void _listenToOrderStatus(String orderId) {
     _orderSubscription = _orderService.getActiveOrderStream(orderId).listen((order) {
       if (!mounted || order == null) return;
 
-      // Успех: Заказ принят мастером
+      setState(() => _currentOrder = order);
+
       if (order.status == AppConstants.orderStatusAccepted && order.masterId != null) {
         _searchTimer?.cancel();
         _orderSubscription?.cancel();
 
-        // Сохраняем Master ID и переходим на экран отслеживания
         _masterId = order.masterId;
         _navigateToTracking();
+        return;
       }
-      // TODO: Добавить логику для обработки статуса 'unassigned' (если бэкенд его использует)
+
+      if (order.status == AppConstants.orderStatusCancelled ||
+          order.status == AppConstants.orderStatusCanceledByMaster) {
+        _searchTimer?.cancel();
+        _orderSubscription?.cancel();
+        _handleSearchTimeout();
+      }
     });
   }
 
@@ -170,48 +187,79 @@ class _OrderSearchScreenState extends State<OrderSearchScreen> {
 
     // E1.1: Экран ожидания
     return Scaffold(
-      appBar: AppBar(title: const Text('Поиск мастера')),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                SizedBox(
-                  width: 150,
-                  height: 150,
-                  child: CircularProgressIndicator(
-                    value: _searchTimeElapsed / _searchTimeoutSeconds,
-                    strokeWidth: 8,
-                    backgroundColor: Colors.grey.shade200,
-                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.red),
+      appBar: AppBar(
+        title: const Text('Usta axtarılır'),
+        backgroundColor: kPrimaryColor,
+        foregroundColor: Colors.white,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox(
+                    width: 150,
+                    height: 150,
+                    child: CircularProgressIndicator(
+                      value: _searchTimeElapsed / _searchTimeoutSeconds,
+                      strokeWidth: 8,
+                      backgroundColor: Colors.grey.shade200,
+                      valueColor: const AlwaysStoppedAnimation<Color>(kPrimaryColor),
+                    ),
                   ),
+                  Text(
+                    '${_searchTimeoutSeconds - _searchTimeElapsed}',
+                    style: const TextStyle(fontSize: 48, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 32),
+              Text(
+                'Təcili usta axtarılır...',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey.shade900),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              if (_currentOrder != null)
+                PendingClientSearchSubtitle(
+                  order: _currentOrder!,
+                  style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                )
+              else
+                FutureBuilder<double?>(
+                  future: CategoryMetricsService().getAvgFirstAcceptSeconds(widget.category),
+                  builder: (context, snap) {
+                    final hint = app_order.OrderSearchMeta.avgFirstAcceptHintAz(snap.data);
+                    return Text(
+                      hint.isEmpty
+                          ? 'Yaxınlıqda uyğun usta axtarılır...'
+                          : 'Yaxınlıqda uyğun usta axtarılır...\n$hint',
+                      style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                      textAlign: TextAlign.center,
+                    );
+                  },
                 ),
-                Text(
-                  '${_searchTimeoutSeconds - _searchTimeElapsed}',
-                  style: const TextStyle(fontSize: 48, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            const SizedBox(height: 32),
-            const Text(
-              'Ищем ближайших свободных мастеров...',
-              style: TextStyle(fontSize: 18),
-            ),
-            const SizedBox(height: 16),
-            Text('Услуга: ${widget.category}', style: TextStyle(color: Colors.grey.shade600)),
-            const SizedBox(height: 32),
-            // Кнопка отмены поиска (E1.4)
-            TextButton(
-              onPressed: () {
-                _searchTimer?.cancel();
-                _orderSubscription?.cancel();
-                Navigator.of(context).pop();
-              },
-              child: const Text('ОТМЕНИТЬ ПОИСК'),
-            ),
-          ],
+              const SizedBox(height: 16),
+              Text(
+                'Kateqoriya: ${widget.category}',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 15),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 32),
+              TextButton(
+                onPressed: () {
+                  _searchTimer?.cancel();
+                  _orderSubscription?.cancel();
+                  Navigator.of(context).pop();
+                },
+                child: const Text('LƏĞV ET', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
         ),
       ),
     );

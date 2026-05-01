@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:bolt_usta/models/master_profile.dart';
-import 'package:bolt_usta/services/admin_service.dart';
-import 'package:bolt_usta/core/app_colors.dart'; // ✅ Цвета
+import 'package:dayday_usta/models/master_profile.dart';
+import 'package:dayday_usta/services/admin_service.dart';
+import 'package:dayday_usta/core/app_colors.dart'; // ✅ Цвета
 
 class AdminVerificationScreen extends StatefulWidget {
   final MasterProfile masterProfile;

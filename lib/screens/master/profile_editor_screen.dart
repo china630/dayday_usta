@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:bolt_usta/models/master_profile.dart';
-import 'package:bolt_usta/services/master_service.dart';
-import 'package:bolt_usta/services/metadata_service.dart';
-import 'package:bolt_usta/core/app_colors.dart';
+import 'package:dayday_usta/models/master_profile.dart';
+import 'package:dayday_usta/services/master_service.dart';
+import 'package:dayday_usta/services/metadata_service.dart';
+import 'package:dayday_usta/core/app_colors.dart';
 
 class ProfileEditorScreen extends StatefulWidget {
   final MasterProfile initialProfile;

@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:bolt_usta/core/app_constants.dart';
-import 'package:bolt_usta/models/order.dart' as app_order;
-import 'package:bolt_usta/models/user_profile.dart';
-import 'package:bolt_usta/services/order_service.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:dayday_usta/core/app_constants.dart';
+import 'package:dayday_usta/models/order.dart' as app_order;
+import 'package:dayday_usta/models/user_profile.dart';
+import 'package:dayday_usta/services/order_service.dart';
 // ✅ ИСПРАВЛЕНИЕ: Используем правильный сервис для получения профилей
-import 'package:bolt_usta/services/user_profile_service.dart';
+import 'package:dayday_usta/services/user_profile_service.dart';
 
 class MasterActiveOrderScreen extends StatefulWidget {
   final String orderId;
@@ -24,17 +25,51 @@ class _MasterActiveOrderScreenState extends State<MasterActiveOrderScreen> {
   Future<void> _updateStatus(String newStatus) async {
     try {
       if (newStatus == AppConstants.orderStatusArrived) {
-        await _orderService.masterArrived(widget.orderId);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Status yeniləndi: Çatdım.')));
+        var perm = await Geolocator.checkPermission();
+        if (perm == LocationPermission.denied) {
+          perm = await Geolocator.requestPermission();
+        }
+        if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Yerini təsdiqləmək üçün məkan icazəsi lazımdır.')),
+            );
+          }
+          return;
+        }
+        final pos = await Geolocator.getCurrentPosition();
+        await _orderService.masterArrived(
+          widget.orderId,
+          latitude: pos.latitude,
+          longitude: pos.longitude,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Status yeniləndi: Çatdım.')),
+          );
+        }
       } else if (newStatus == AppConstants.orderStatusCompleted) {
-        await _orderService.masterCompleteOrder(widget.orderId);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sifariş uğurla bitirildi.')));
-        Navigator.of(context).popUntil((route) => route.isFirst);
+        final freeCommission = await _orderService.masterCompleteOrder(widget.orderId);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                freeCommission
+                    ? 'Sifariş bitdi. Bu gün üçün komissiya 0 AZN (hər 4-cü sifariş).'
+                    : 'Sifariş uğurla bitirildi.',
+              ),
+              backgroundColor: freeCommission ? Colors.teal.shade700 : null,
+            ),
+          );
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        }
       }
-      setState(() {});
+      if (mounted) setState(() {});
     } catch (e) {
-      print('Ошибка обновления статуса: $e');
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Xəta baş verdi. Status dəyişmədi.')));
+      final msg = e is Exception ? e.toString().replaceFirst('Exception: ', '') : '$e';
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      }
     }
   }
 
@@ -54,14 +89,15 @@ class _MasterActiveOrderScreenState extends State<MasterActiveOrderScreen> {
 
     if (confirmed == true) {
       try {
-        await _orderService.masterCancelOrder(widget.orderId);
+        await _orderService.masterCancelOrder(widget.orderId, reason: 'master_request');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sifariş ləğv edildi.')));
           Navigator.of(context).pop();
         }
       } catch (e) {
+        final msg = e is Exception ? e.toString().replaceFirst('Exception: ', '') : 'Ləğvetmə zamanı xəta baş verdi.';
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ləğvetmə zamanı xəta baş verdi.')));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
         }
       }
     }

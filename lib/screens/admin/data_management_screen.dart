@@ -1,7 +1,7 @@
 // lib/screens/admin/data_management_screen.dart
 
 import 'package:flutter/material.dart';
-import 'package:bolt_usta/services/data_management_service.dart';
+import 'package:dayday_usta/services/data_management_service.dart';
 
 class DataManagementScreen extends StatelessWidget {
   final String collectionName; // 'categories' или 'districts'

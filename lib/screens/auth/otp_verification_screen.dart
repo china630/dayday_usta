@@ -2,15 +2,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
-import 'package:bolt_usta/services/auth_service.dart';
-import 'package:bolt_usta/core/app_colors.dart';
-import 'package:bolt_usta/core/app_constants.dart'; // ✅ Добавлен импорт констант
-import 'package:bolt_usta/screens/auth/role_selection_screen.dart';
-import 'package:bolt_usta/screens/client/client_main_shell.dart';
-import 'package:bolt_usta/screens/master/master_dashboard_screen.dart';
-import 'package:bolt_usta/screens/admin/admin_dashboard_screen.dart'; // ✅ Импорт Админки
-import 'package:bolt_usta/services/user_profile_service.dart';
-import 'package:bolt_usta/models/master_profile.dart';
+import 'package:dayday_usta/services/auth_service.dart';
+import 'package:dayday_usta/core/app_colors.dart';
+import 'package:dayday_usta/core/app_constants.dart'; // ✅ Добавлен импорт констант
+import 'package:dayday_usta/screens/auth/role_selection_screen.dart';
+import 'package:dayday_usta/screens/client/client_main_shell.dart';
+import 'package:dayday_usta/screens/master/master_dashboard_screen.dart';
+import 'package:dayday_usta/screens/admin/admin_dashboard_screen.dart'; // ✅ Импорт Админки
+import 'package:dayday_usta/services/user_profile_service.dart';
+import 'package:dayday_usta/models/master_profile.dart';
 
 class OtpVerificationScreen extends StatefulWidget {
   final String verificationId;

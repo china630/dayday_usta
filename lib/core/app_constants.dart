@@ -24,5 +24,14 @@ class AppConstants {
   static const String orderStatusArrived = 'arrived';
   static const String orderStatusCompleted = 'completed';
   static const String orderStatusCancelled = 'cancelled';
+  /// Отмена мастером (сервер: `canceledByMaster`)
+  static const String orderStatusCanceledByMaster = 'canceledByMaster';
 
+  /// Если коллекция `categories` в Firestore пуста или недоступна — минимальный список для UI (срочный вызов и т.п.).
+  static const List<String> fallbackServiceCategories = [
+    'Santexnik',
+    'Elektrik',
+    'Klimat',
+    'Mebel',
+  ];
 }

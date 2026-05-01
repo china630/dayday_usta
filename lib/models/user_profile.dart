@@ -8,6 +8,10 @@ class UserProfile {
   final String name;
   final String surname;
   final String? fcmToken;
+  final double balance;
+  final double frozenBalance;
+  /// Только у клиента: избранные мастера (Firestore `favoriteMasterIds`).
+  final List<String> favoriteMasterIds;
 
   UserProfile({
     required this.uid,
@@ -17,12 +21,18 @@ class UserProfile {
     required this.name,
     required this.surname,
     this.fcmToken,
+    this.balance = 0.0,       // Дефолт 0
+    this.frozenBalance = 0.0, // Дефолт 0
+    this.favoriteMasterIds = const [],
   });
 
-  // ✅ Геттер fullName (исправляет ошибки в UI)
+  // ✅ Геттер fullName
   String get fullName => '$name $surname';
 
-  // ✅ Метод для сохранения в базу (исправляет ошибки в AuthService)
+  // ✅ Геттер availableBalance (Доступные средства)
+  double get availableBalance => balance - frozenBalance;
+
+  // ✅ Метод для сохранения в базу
   Map<String, dynamic> toFirestore() {
     return {
       'uid': uid,
@@ -32,10 +42,13 @@ class UserProfile {
       'name': name,
       'surname': surname,
       'fcmToken': fcmToken,
+      'balance': balance,             // Пишем в БД
+      'frozenBalance': frozenBalance, // Пишем в БД
+      if (role == 'client') 'favoriteMasterIds': favoriteMasterIds,
     };
   }
 
-  // Алиас для обратной совместимости (если где-то используется toMap)
+  // Алиас для обратной совместимости
   Map<String, dynamic> toMap() => toFirestore();
 
   factory UserProfile.fromFirestore(Map<String, dynamic> data) {
@@ -47,6 +60,10 @@ class UserProfile {
       name: data['name'] ?? '',
       surname: data['surname'] ?? '',
       fcmToken: data['fcmToken'],
+      // Читаем с защитой типов (int -> double)
+      balance: (data['balance'] ?? 0).toDouble(),
+      frozenBalance: (data['frozenBalance'] ?? 0).toDouble(),
+      favoriteMasterIds: List<String>.from(data['favoriteMasterIds'] ?? []),
     );
   }
 }

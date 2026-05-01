@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:bolt_usta/core/app_constants.dart';
-import 'package:bolt_usta/core/app_colors.dart'; // ✅ Добавлены ваши цвета
-import 'package:bolt_usta/services/auth_service.dart';
-import 'package:bolt_usta/main.dart';
+import 'package:dayday_usta/core/app_constants.dart';
+import 'package:dayday_usta/core/app_colors.dart'; // ✅ Добавлены ваши цвета
+import 'package:dayday_usta/services/auth_service.dart';
+import 'package:dayday_usta/main.dart';
 
 class RoleSelectionScreen extends StatefulWidget {
   final User firebaseUser;

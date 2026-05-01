@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:bolt_usta/core/app_colors.dart';
-import 'package:bolt_usta/models/master_profile.dart';
-import 'package:bolt_usta/services/master_service.dart';
-import 'package:bolt_usta/services/metadata_service.dart';
-import 'package:bolt_usta/screens/client/master_profile_screen.dart';
+import 'package:dayday_usta/core/app_colors.dart';
+import 'package:dayday_usta/models/master_profile.dart';
+import 'package:dayday_usta/services/master_service.dart';
+import 'package:dayday_usta/services/metadata_service.dart';
+import 'package:dayday_usta/screens/client/master_profile_screen.dart';
+import 'package:dayday_usta/services/favorites_service.dart';
 
 class MasterSearchScreen extends StatefulWidget {
   const MasterSearchScreen({super.key});
@@ -56,6 +57,98 @@ class _MasterSearchScreenState extends State<MasterSearchScreen> {
     }
   }
 
+  Widget _buildFavoritesStrip(String currentUserId) {
+    if (currentUserId.isEmpty) return const SizedBox.shrink();
+    return StreamBuilder<List<String>>(
+      stream: FavoritesService().favoriteMasterIdsStream(currentUserId),
+      builder: (context, snap) {
+        final ids = snap.data ?? [];
+        if (ids.isEmpty) return const SizedBox.shrink();
+        return Container(
+          width: double.infinity,
+          color: Colors.white,
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Seçilmiş ustalar',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: kDarkColor),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 76,
+                child: FutureBuilder<List<MasterProfile?>>(
+                  future: Future.wait(ids.map((id) => _masterService.getProfileData(id))),
+                  builder: (context, profSnap) {
+                    if (!profSnap.hasData) {
+                      return const Center(
+                        child: SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      );
+                    }
+                    final list = profSnap.data!;
+                    return ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: list.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 12),
+                      itemBuilder: (ctx, i) {
+                        final m = list[i];
+                        if (m == null) return const SizedBox.shrink();
+                        return InkWell(
+                          onTap: () {
+                            Navigator.push(
+                              ctx,
+                              MaterialPageRoute(
+                                builder: (_) => MasterProfileScreen(
+                                  masterId: m.uid,
+                                  currentUserId: currentUserId,
+                                ),
+                              ),
+                            );
+                          },
+                          child: SizedBox(
+                            width: 72,
+                            child: Column(
+                              children: [
+                                CircleAvatar(
+                                  radius: 22,
+                                  backgroundColor: kPrimaryColor.withOpacity(0.15),
+                                  child: Text(
+                                    m.name.isNotEmpty ? m.name[0].toUpperCase() : '?',
+                                    style: const TextStyle(
+                                      color: kPrimaryColor,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  m.fullName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(fontSize: 11, color: kDarkColor),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _loadMasters() async {
     setState(() => _isLoading = true);
 
@@ -94,6 +187,7 @@ class _MasterSearchScreenState extends State<MasterSearchScreen> {
       backgroundColor: kBackgroundColor,
       body: Column(
         children: [
+          _buildFavoritesStrip(currentUserId),
           // Блок фильтров
           Container(
             padding: const EdgeInsets.all(16),

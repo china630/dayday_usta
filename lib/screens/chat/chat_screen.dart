@@ -3,9 +3,9 @@ import 'package:cloud_firestore/cloud_firestore.dart'; // Для работы с
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart'; // Для форматирования времени
 
-import 'package:bolt_usta/core/app_colors.dart'; // ✅ Импорт цветов
-import 'package:bolt_usta/models/chat_message.dart';
-import 'package:bolt_usta/services/chat_service.dart';
+import 'package:dayday_usta/core/app_colors.dart'; // ✅ Импорт цветов
+import 'package:dayday_usta/models/chat_message.dart';
+import 'package:dayday_usta/services/chat_service.dart';
 
 class ChatScreen extends StatefulWidget {
   final String chatId; // ID заказа

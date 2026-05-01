@@ -6,62 +6,78 @@ service cloud.firestore {
     // -------------------------------------------------------------------------
     // ПОМОЩНИКИ
     // -------------------------------------------------------------------------
-
-    // Получает документ профиля текущего пользователя
     function getProfile() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
-
-    // Проверяет, является ли пользователь Клиентом
     function isClient() {
       return request.auth != null && getProfile() != null && getProfile().role == 'client';
     }
-
-    // Проверяет, является ли пользователь Мастером
     function isMaster() {
       return request.auth != null && getProfile() != null && getProfile().role == 'master';
     }
-
-    // Проверяет, является ли пользователь Администратором
     function isAdmin() {
       return request.auth != null && getProfile() != null && getProfile().role == 'admin';
     }
-
-    // Проверяет, является ли пользователь владельцем документа
     function isOwner(userId) {
       return request.auth.uid == userId;
+    }
+    function isFormerOrderMaster(order) {
+      let fm = order.formerMasterIds;
+      return fm is list && fm.hasAny([request.auth.uid]);
+    }
+
+    // -------------------------------------------------------------------------
+    // ✅ ПУБЛИЧНЫЕ СПРАВОЧНИКИ
+    // -------------------------------------------------------------------------
+    match /categories/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /districts/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Агрегаты UX (среднее время accept по категории) — только сервер
+    match /category_metrics/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // ✅ ТРАНЗАКЦИИ (ИСТОРИЯ ПЛАТЕЖЕЙ) - НОВОЕ!
+    // -------------------------------------------------------------------------
+    match /transactions/{transactionId} {
+      // Читать: Только свои чеки
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+
+      // Писать: ЗАПРЕЩЕНО (пишет только сервер)
+      allow write: if false;
     }
 
     // -------------------------------------------------------------------------
     // КОЛЛЕКЦИЯ USERS (ПРОФИЛИ)
     // -------------------------------------------------------------------------
     match /users/{userId} {
-
-      // Чтение:
       allow read: if (
         isOwner(userId) ||
         isAdmin() ||
-        // Клиент может читать только верифицированные профили мастеров.
-        (isClient() && resource.data.role == 'master' && resource.data.verificationStatus == 'verified')
+        (isClient() && resource.data.role == 'master' && resource.data.verificationStatus == 'verified') ||
+        (isMaster() && resource.data.role == 'client')
       );
-
-      // Создание (Регистрация):
       allow create: if (
-        isOwner(userId) &&
-        // Проверяем, что пользователь не существует (чтобы избежать дублирования)
-        (!exists(/databases/$(database)/documents/users/$(userId)))
+        isOwner(userId) && (!exists(/databases/$(database)/documents/users/$(userId)))
       );
-
-      // Обновление: (Остается строгим, так как нельзя менять системные поля вручную)
       allow update: if (
         isOwner(userId) &&
-        // Запрет на изменение критических полей (роль, UID)
         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'uid'])) &&
-        // Запрет на изменение системных полей, которые должны обновляться Администратором или Cloud Functions
-        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['rating', 'callsCount', 'viewsCount', 'verificationStatus']))
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['favoriteMasterIds']) || resource.data.role == 'client') &&
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'rating', 'callsCount', 'viewsCount', 'verificationStatus',
+          'balance', 'frozenBalance',
+          'consecutiveRejections', 'probationEndsAt', 'banExpiresAt', 'lastBlockedAt'
+        ]))
       );
-
-      // Удаление: Только Администратор.
       allow delete: if (isAdmin());
     }
 
@@ -69,82 +85,86 @@ service cloud.firestore {
     // КОЛЛЕКЦИЯ ORDERS (ЗАКАЗЫ)
     // -------------------------------------------------------------------------
     match /orders/{orderId} {
-      function canAccessOrder() {
-        return isAdmin() ||
-        isOwner(resource.data.customerId) || (isMaster() && resource.data.masterId == request.auth.uid);
+      allow read: if
+          isAdmin() ||
+          isOwner(resource.data.customerId) ||
+          (isMaster() && (
+             resource.data.masterId == request.auth.uid ||
+             resource.data.targetMasterId == request.auth.uid ||
+             resource.data.status == 'pending' ||
+             isFormerOrderMaster(resource.data)
+          ));
+      // Yaradılması yalnız Cloud Functions (Admin SDK) ilə; birbaşa klient yazısı bağlıdır
+      allow create: if false;
+      // Birbaşa status/balance dəyişiklikləri yalnız CF; müştəri yalnız rəy sonrası isReviewed yaza bilər
+      allow update: if isAdmin() || (
+          isOwner(resource.data.customerId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isReviewed'])
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /orders/{orderId}/events/{eventId} {
+      function orderDoc() {
+        return get(/databases/$(database)/documents/orders/$(orderId)).data;
       }
-
-      // Чтение: Только участники заказа (Клиент, Мастер) и Администратор.
-      allow read: if (canAccessOrder());
-
-      // Создание: Только Клиент.
-      allow create: if (isClient());
-
-      // Обновление: Только участники заказа (Клиент и Мастер) и Администратор могут обновлять СВОИ поля статуса.
-      allow update: if (canAccessOrder());
-
-      // Удаление: Только Администратор.
-      allow delete: if (isAdmin());
+      function canReadOrderEvents() {
+        let o = orderDoc();
+        return isAdmin() ||
+          o.customerId == request.auth.uid ||
+          o.masterId == request.auth.uid ||
+          o.targetMasterId == request.auth.uid ||
+          isFormerOrderMaster(o);
+      }
+      allow read: if request.auth != null && canReadOrderEvents();
+      allow write: if false;
     }
 
     // -------------------------------------------------------------------------
     // КОЛЛЕКЦИЯ REVIEWS (ОТЗЫВЫ)
     // -------------------------------------------------------------------------
     match /reviews/{reviewId} {
-      // Чтение: Любой аутентифицированный пользователь может читать отзывы.
       allow read: if (request.auth != null);
-
-      // Создание: Только Клиент.
       allow create: if (isClient());
-
-      // Обновление/Удаление: Только Администратор.
       allow update, delete: if (isAdmin());
     }
 
     // -------------------------------------------------------------------------
-    // КОЛЛЕКЦИЯ MESSAGES (ЧАТ ВНУТРИ ЗАКАЗА)
+    // КОЛЛЕКЦИЯ MESSAGES (ЧАТ)
     // -------------------------------------------------------------------------
     match /orders/{orderId}/messages/{messageId} {
-      // Проверяем, что пользователь участвует в заказе
       function canAccessChat() {
         let order = get(/databases/$(database)/documents/orders/$(orderId)).data;
-        return isAdmin() || isOwner(order.customerId) || (isMaster() && order.masterId == request.auth.uid);
+        let fm = order.formerMasterIds;
+        let wasFormer = fm is list && fm.hasAny([request.auth.uid]);
+        return isAdmin() || isOwner(order.customerId) || (isMaster() && order.masterId == request.auth.uid) || wasFormer;
       }
-
-      // Чтение: Доступ только у Клиента и Мастера, участвующих в заказе, и Админа.
       allow read: if (canAccessChat());
-
-      // Создание: Доступ только у Клиента и Мастера, участвующих в заказе.
       allow create: if (canAccessChat());
-
-      // Обновление/Удаление: Запрещено.
       allow update, delete: if (false);
     }
 
     // -------------------------------------------------------------------------
-    // КОЛЛЕКЦИЯ master_filters (ДЛЯ AND-ПОИСКА 3NF)
+    // КОЛЛЕКЦИЯ master_filters
     // -------------------------------------------------------------------------
-
-    // Разрешает чтение из промежуточной коллекции только аутентифицированным пользователям
     match /master_filters/{docId} {
       allow read: if (request.auth != null);
-      // Запись разрешаем только Админу или Мастеру
       allow write: if (isAdmin() || isMaster());
     }
-
-    // -------------------------------------------------------------------------
-    // ПРАВИЛА ДЛЯ COLLECTION GROUP (AND-ФИЛЬТРАЦИЯ)
-    // -------------------------------------------------------------------------
-
-    // Разрешает чтение индекса категорий только аутентифицированным пользователям
     match /{path=**}/categories_index/{filterId} {
       allow read: if request.auth != null;
     }
-
-    // Разрешает чтение индекса районов только аутентифицированным пользователям
     match /{path=**}/districts_index/{filterId} {
       allow read: if request.auth != null;
     }
 
-  } // <-- ЗАКРЫВАЕТСЯ БЛОК databases
+    // -------------------------------------------------------------------------
+    // СИСТЕМНЫЕ НАСТРОЙКИ (ТАРИФЫ)
+    // -------------------------------------------------------------------------
+    match /system_settings/{docId} {
+      allow read: if true; // Чтобы приложение знало цену
+      allow write: if false;
+    }
+
+  }
 }

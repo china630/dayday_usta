@@ -3,19 +3,19 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // ✅ Импорт
 import 'package:provider/provider.dart';
-import 'package:bolt_usta/core/app_constants.dart';
-import 'package:bolt_usta/services/auth_service.dart';
-import 'package:bolt_usta/services/user_profile_service.dart';
-import 'package:bolt_usta/screens/auth/auth_screen.dart';
-import 'package:bolt_usta/screens/auth/role_selection_screen.dart';
-import 'package:bolt_usta/screens/client/client_main_shell.dart';
-import 'package:bolt_usta/screens/master/master_dashboard_screen.dart';
-import 'package:bolt_usta/screens/admin/admin_dashboard_screen.dart';
-import 'package:bolt_usta/firebase_options.dart';
-import 'package:bolt_usta/models/user_profile.dart';
-import 'package:bolt_usta/models/master_profile.dart';
-import 'package:bolt_usta/managers/location_manager.dart';
-import 'package:bolt_usta/core/app_colors.dart';
+import 'package:dayday_usta/core/app_constants.dart';
+import 'package:dayday_usta/services/auth_service.dart';
+import 'package:dayday_usta/services/user_profile_service.dart';
+import 'package:dayday_usta/screens/auth/auth_screen.dart';
+import 'package:dayday_usta/screens/auth/role_selection_screen.dart';
+import 'package:dayday_usta/screens/client/client_main_shell.dart';
+import 'package:dayday_usta/screens/master/master_dashboard_screen.dart';
+import 'package:dayday_usta/screens/admin/admin_dashboard_screen.dart';
+import 'package:dayday_usta/firebase_options.dart';
+import 'package:dayday_usta/models/user_profile.dart';
+import 'package:dayday_usta/models/master_profile.dart';
+import 'package:dayday_usta/managers/location_manager.dart';
+import 'package:dayday_usta/core/app_colors.dart';
 
 // ✅ 1. Определяем канал уведомлений для Android (ТО ЖЕ ИМЯ, ЧТО НА СЕРВЕРЕ)
 const AndroidNotificationChannel channel = AndroidNotificationChannel(
@@ -77,18 +77,18 @@ void main() async {
         ChangeNotifierProvider(create: (_) => LocationManager()),
         Provider<UserProfileService>(create: (_) => UserProfileService()),
       ],
-      child: const BoltUstaApp(),
+      child: const DaydayUstaApp(),
     ),
   );
 }
 
-class BoltUstaApp extends StatelessWidget {
-  const BoltUstaApp({super.key});
+class DaydayUstaApp extends StatelessWidget {
+  const DaydayUstaApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Bolt Usta',
+      title: 'DayDay Usta',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,

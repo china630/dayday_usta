@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:bolt_usta/core/app_colors.dart';
+import 'package:dayday_usta/core/app_colors.dart';
 
 class AcceptOrderModal extends StatefulWidget {
   final String orderId;
@@ -91,7 +91,7 @@ class _AcceptOrderModalState extends State<AcceptOrderModal> {
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottomPadding),
       child: Column(
@@ -157,7 +157,7 @@ class _AcceptOrderModalState extends State<AcceptOrderModal> {
                   child: ElevatedButton(
                     onPressed: _acceptOrder,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00C853),
+                      backgroundColor: kPrimaryColor,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       elevation: 0,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

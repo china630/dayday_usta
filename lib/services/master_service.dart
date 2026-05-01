@@ -1,12 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:bolt_usta/core/app_constants.dart';
-import 'package:bolt_usta/models/master_profile.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:dayday_usta/core/app_constants.dart';
+import 'package:dayday_usta/models/master_profile.dart';
 import 'dart:io';
 
 class MasterService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
+  final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(region: 'europe-west3');
   final String _usersCollection = 'users';
 
   Future<void> toggleMasterStatus(String masterId, bool isAvailable) async {
@@ -57,26 +60,22 @@ class MasterService {
     final selfieUrl = await _storage.ref().child('$storagePath/selfie.jpg').putFile(selfieFile).then((task) => task.ref.getDownloadURL());
     final docUrl = await _storage.ref().child('$storagePath/document.jpg').putFile(docFile).then((task) => task.ref.getDownloadURL());
 
-    await _db.collection(_usersCollection).doc(masterId).update({
-      'verificationStatus': AppConstants.verificationPending,
-      'verificationDocs': {
-        'selfieUrl': selfieUrl,
-        'docUrl': docUrl,
-        'submittedAt': FieldValue.serverTimestamp(),
-      },
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid != masterId) {
+      throw StateError('Yalnız öz profiliniz üçün təsdiq göndərə bilərsiniz.');
+    }
+    await _functions.httpsCallable('submitMasterVerification').call({
+      'selfieUrl': selfieUrl,
+      'docUrl': docUrl,
     });
   }
 
   Future<void> incrementCallsCount(String masterId) async {
-    await _db.collection(_usersCollection).doc(masterId).update({
-      'callsCount': FieldValue.increment(1),
-    });
+    await _functions.httpsCallable('incrementMasterEngagement').call({'counter': 'calls'});
   }
 
   Future<void> incrementViewsCount(String masterId) async {
-    await _db.collection(_usersCollection).doc(masterId).update({
-      'viewsCount': FieldValue.increment(1),
-    });
+    await _functions.httpsCallable('incrementMasterEngagement').call({'counter': 'views'});
   }
 
   Future<List<MasterProfile>> searchMasters({

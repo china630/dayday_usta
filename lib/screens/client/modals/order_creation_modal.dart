@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import 'package:bolt_usta/models/order.dart';
-import 'package:bolt_usta/services/order_service.dart';
-import 'package:bolt_usta/core/app_colors.dart';
+import 'package:dayday_usta/models/order.dart';
+import 'package:dayday_usta/services/order_service.dart';
+import 'package:dayday_usta/core/app_colors.dart';
 
 class OrderCreationModal extends StatefulWidget {
   final String clientUserId;
@@ -59,11 +59,10 @@ class _OrderCreationModalState extends State<OrderCreationModal> with SingleTick
     setState(() => _isLoading = true);
 
     try {
-      // Проверка активных заказов
       final hasActive = await _orderService.hasActiveOrderInCategory(widget.clientUserId, widget.category);
       if (hasActive) {
         if (mounted) {
-          Navigator.pop(context); // Закрываем, чтобы показать ошибку на карте или снекбаром
+          Navigator.pop(context);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Bu kateqoriyada aktiv sifarişiniz var.")),
           );
@@ -84,7 +83,7 @@ class _OrderCreationModalState extends State<OrderCreationModal> with SingleTick
         category: widget.category,
         location: widget.location,
         type: selectedType,
-        source: widget.targetMasterId != null ? OrderSource.catalogDirect : OrderSource.boltSearch,
+        source: widget.targetMasterId != null ? OrderSource.catalogDirect : OrderSource.radarSearch,
         scheduledTime: finalScheduledTime,
         targetMasterId: widget.targetMasterId,
       );
@@ -134,12 +133,11 @@ class _OrderCreationModalState extends State<OrderCreationModal> with SingleTick
     );
   }
 
-  // ... (методы _pickDate и _pickTime остаются прежними)
   Future<void> _pickDate() async {
     final now = DateTime.now();
     final picked = await showDatePicker(
       context: context, initialDate: now, firstDate: now, lastDate: now.add(const Duration(days: 30)),
-      builder: (context, child) => Theme(data: ThemeData.light().copyWith(colorScheme: ColorScheme.light(primary: kPrimaryColor)), child: child!),
+      builder: (context, child) => Theme(data: ThemeData.light().copyWith(colorScheme: const ColorScheme.light(primary: kPrimaryColor)), child: child!),
     );
     if (picked != null) setState(() => _selectedDate = picked);
   }
@@ -147,17 +145,22 @@ class _OrderCreationModalState extends State<OrderCreationModal> with SingleTick
   Future<void> _pickTime() async {
     final picked = await showTimePicker(
       context: context, initialTime: TimeOfDay.now(),
-      builder: (context, child) => Theme(data: ThemeData.light().copyWith(colorScheme: ColorScheme.light(primary: kPrimaryColor)), child: child!),
+      builder: (context, child) => Theme(data: ThemeData.light().copyWith(colorScheme: const ColorScheme.light(primary: kPrimaryColor)), child: child!),
     );
     if (picked != null) setState(() => _selectedTime = picked);
   }
 
   @override
   Widget build(BuildContext context) {
+    // 🛠️ FIX: Получаем высоту системного отступа снизу (кнопки Android или полоска iOS)
+    final mq = MediaQuery.of(context);
+    final bottomPadding = mq.viewPadding.bottom + mq.viewInsets.bottom;
+    final maxH = mq.size.height * 0.92;
+    final totalHeight = (520.0 + bottomPadding).clamp(0.0, maxH);
+
     return Container(
-      padding: const EdgeInsets.all(20),
-      // Динамическая высота
-      height: 520,
+      padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottomPadding),
+      height: totalHeight,
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -175,7 +178,6 @@ class _OrderCreationModalState extends State<OrderCreationModal> with SingleTick
           const SizedBox(height: 25),
 
           if (widget.allowEmergency)
-          // ✅ КРАСИВЫЙ ДИЗАЙН ТАБОВ (Bubble Tab)
             Container(
               height: 50,
               decoration: BoxDecoration(
@@ -186,13 +188,13 @@ class _OrderCreationModalState extends State<OrderCreationModal> with SingleTick
                 controller: _tabController,
                 indicator: BoxDecoration(
                   borderRadius: BorderRadius.circular(25),
-                  color: kPrimaryColor, // Активный фон - мятный
+                  color: kPrimaryColor,
                   boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4, offset: const Offset(0, 2))],
                 ),
-                labelColor: Colors.white, // Активный текст - белый
-                unselectedLabelColor: Colors.grey[600], // Неактивный - серый
+                labelColor: Colors.white,
+                unselectedLabelColor: Colors.grey[600],
                 indicatorSize: TabBarIndicatorSize.tab,
-                dividerColor: Colors.transparent, // Убираем линию снизу
+                dividerColor: Colors.transparent,
                 labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                 tabs: const [
                   Tab(text: "TƏCİLİ (İndi)"),
@@ -202,7 +204,6 @@ class _OrderCreationModalState extends State<OrderCreationModal> with SingleTick
               ),
             )
           else
-          // Сообщение, если срочный недоступен
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(10)),
@@ -221,7 +222,7 @@ class _OrderCreationModalState extends State<OrderCreationModal> with SingleTick
             child: widget.allowEmergency
                 ? TabBarView(
               controller: _tabController,
-              physics: const NeverScrollableScrollPhysics(), // Отключаем свайп, чтобы не путать
+              physics: const NeverScrollableScrollPhysics(),
               children: [
                 _buildEmergencyBody(),
                 _buildScheduledBody(),
@@ -276,7 +277,8 @@ class _OrderCreationModalState extends State<OrderCreationModal> with SingleTick
   }
 
   Widget _buildScheduledBody() {
-    return Column(
+    return SingleChildScrollView(
+      child: Column(
       children: [
         _buildSelectionTile(
           icon: Icons.calendar_today,
@@ -292,6 +294,7 @@ class _OrderCreationModalState extends State<OrderCreationModal> with SingleTick
           isSelected: _selectedTime != null,
         ),
       ],
+    ),
     );
   }
 

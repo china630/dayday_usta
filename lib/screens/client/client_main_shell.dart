@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:bolt_usta/core/app_colors.dart'; // ✅ Цвета
-import 'package:bolt_usta/screens/map_screen.dart';
-import 'package:bolt_usta/screens/client/master_search_screen.dart';
-import 'package:bolt_usta/screens/client/client_order_history_screen.dart';
-import 'package:bolt_usta/screens/client/client_profile_screen.dart';
+import 'package:dayday_usta/core/app_colors.dart'; // ✅ Цвета
+import 'package:dayday_usta/screens/map_screen.dart';
+import 'package:dayday_usta/screens/client/master_search_screen.dart';
+import 'package:dayday_usta/screens/client/client_order_history_screen.dart';
+import 'package:dayday_usta/screens/client/client_profile_screen.dart';
 
 class ClientMainShell extends StatefulWidget {
   final String currentUserId;

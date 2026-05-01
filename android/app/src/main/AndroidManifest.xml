@@ -9,7 +9,7 @@
     <application
 
 
-        android:label="bolt_usta"
+        android:label="DayDay Usta"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 
